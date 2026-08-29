@@ -59,7 +59,7 @@ function togglePasswordVisibility() {
         modal.classList.add('border-amber-200', 'bg-amber-50/95', 'text-amber-900');
         if (icon) icon.innerHTML = '<div class="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shadow-xs"><i class="fa-solid fa-screwdriver-wrench text-base"></i></div>';
         if (title) title.textContent = "System Maintenance";
-        msgText.textContent = customMessage || "System maintenance is scheduled for Sunday, 11:00 PM–1:00 AM. Save drafts before then.";
+        msgText.textContent = customMessage || "System maintenance is scheduled for Sunday, 11:00 PMâ€“1:00 AM. Save drafts before then.";
       }
 
       statusAlertTimer = setTimeout(() => {
@@ -132,7 +132,7 @@ function togglePasswordVisibility() {
           showStatusAlert('success', data.message || 'Login successful! Redirecting to dashboard...');
           showDashboardLoadingOverlay('Entering Dashboard...');
           setTimeout(() => {
-            window.location.href = 'pages/dashboard.php';
+            window.location.href = 'pages/treasury/index.php';
           }, 1400);
         } else if (data.status === 'maintenance') {
           showStatusAlert('maintenance', data.message);
@@ -156,7 +156,7 @@ function togglePasswordVisibility() {
           showStatusAlert('success', 'Login successful! Redirecting to dashboard...');
           showDashboardLoadingOverlay('Entering Dashboard...');
           setTimeout(() => {
-            window.location.href = 'pages/dashboard.php';
+            window.location.href = 'pages/treasury/index.php';
           }, 1400);
         } else {
           showStatusAlert('error', 'Login failed. Invalid credentials or network error.');
@@ -294,7 +294,7 @@ function togglePasswordVisibility() {
           closeOtpModal();
           showDashboardLoadingOverlay('Entering Dashboard...');
           setTimeout(() => {
-            window.location.href = 'pages/dashboard.php';
+            window.location.href = 'pages/treasury/index.php';
           }, 1400);
         } else {
           showOtpAlert(data.message || 'Verification failed.');

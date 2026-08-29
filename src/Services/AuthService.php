@@ -40,4 +40,16 @@ class AuthService
             exit;
         }
     }
+
+    public function getJwtToken($bodyPayload = null)
+    {
+        require_once __DIR__ . '/../../config/proxy.php';
+        return \getJwtToken($bodyPayload);
+    }
+
+    public function verifyJwtToken($bearerToken = null)
+    {
+        require_once __DIR__ . '/../../config/proxy.php';
+        return \verifyJwtToken($bearerToken);
+    }
 }

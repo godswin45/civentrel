@@ -1,17 +1,17 @@
-<?php
+﻿<?php
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-function proxyRequest($url, $method = 'POST', $body = null, $sendCookie = true) {
+function proxyRequest($url, $method = 'POST', $body = null, $sendCookie = true, $customHeaders = []) {
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     curl_setopt($ch, CURLOPT_HEADER, true);
     
-    $headers = [
+    $headers = array_merge([
         'Content-Type: application/json'
-    ];
+    ], $customHeaders);
     
     $remoteSessId = $_SESSION['remote_phpsessid'] ?? $_COOKIE['remote_phpsessid'] ?? $_COOKIE['PHPSESSID'] ?? null;
     if ($sendCookie && !empty($remoteSessId)) {
@@ -60,4 +60,22 @@ function proxyRequest($url, $method = 'POST', $body = null, $sendCookie = true) 
         'code' => $httpCode,
         'body' => json_decode($bodyStr, true) ?? $bodyStr
     ];
+}
+
+function getJwtToken($bodyPayload = null) {
+    $url = 'https://civentral.tech/api/v1/auth/token/';
+    return proxyRequest($url, 'POST', $bodyPayload, true);
+}
+
+function verifyJwtToken($bearerToken = null) {
+    $url = 'https://civentral.tech/api/v1/auth/verify/';
+    $headers = [];
+    if (!empty($bearerToken)) {
+        $headers[] = 'Authorization: Bearer ' . $bearerToken;
+    } elseif (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $headers[] = 'Authorization: ' . $_SERVER['HTTP_AUTHORIZATION'];
+    } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $headers[] = 'Authorization: ' . $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    }
+    return proxyRequest($url, 'GET', null, true, $headers);
 }

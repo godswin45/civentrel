@@ -6,8 +6,7 @@ if (!function_exists('loadEnv')) {
         $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         foreach ($lines as $line) {
             $line = trim($line);
-            if (empty($line) || strpos($line, '#') === 0) continue;
-            if (strpos($line, '=') === false) continue;
+            if (empty($line) || strpos($line, '#') === 0 || strpos($line, '=') === false) continue;
             list($name, $value) = explode('=', $line, 2);
             $name = trim($name);
             $value = trim($value, " \t\n\r\0\x0B\"'");
@@ -27,11 +26,11 @@ class Database {
     private $pdo;
 
     public function __construct() {
-        $host = getenv('DB_HOST') ?: 'localhost';
-        $port = getenv('DB_PORT') ?: '3306';
-        $db   = getenv('DB_NAME') ?: '';
-        $user = getenv('DB_USER') ?: 'root';
-        $pass = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : '';
+        $host = getenv('DB_HOST') ?: (getenv('TREASURY_DB_HOST') ?: 'localhost');
+        $port = getenv('DB_PORT') ?: (getenv('TREASURY_DB_PORT') ?: '3306');
+        $db   = getenv('DB_NAME') ?: (getenv('TREASURY_DB_NAME') ?: 'treasury');
+        $user = getenv('DB_USER') ?: (getenv('TREASURY_DB_USER') ?: 'root');
+        $pass = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : ((getenv('TREASURY_DB_PASSWORD') !== false) ? getenv('TREASURY_DB_PASSWORD') : '');
         $charset = 'utf8mb4';
 
         $dsn = "mysql:host={$host};port={$port};dbname={$db};charset={$charset}";
@@ -169,6 +168,6 @@ class Database {
 
 class DatabaseDB extends Database {}
 
-// Global instance $db for easy inclusion across api & pages
+// Global instances for backwards compatibility
 $db = Database::getInstance();
-?>
+$treasuryDb = $db;

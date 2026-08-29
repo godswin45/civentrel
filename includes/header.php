@@ -18,26 +18,11 @@ require_once __DIR__ . '/../src/bootstrap.php';
       --color-brand-dark: #176B87;
     }
   </style>
-  <style>
-    @keyframes shimmer {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
-    }
-    .skeleton-loader {
-      background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 37%, #e2e8f0 63%);
-      background-size: 400% 100%;
-      animation: shimmer 1.4s ease infinite;
-    }
-    html.dark .skeleton-loader {
-      background: linear-gradient(90deg, #1e293b 25%, #334155 37%, #1e293b 63%);
-      background-size: 400% 100%;
-      animation: shimmer 1.4s ease infinite;
-    }
-  </style>
   <link rel="stylesheet" href="<?php echo $basePath ?? '../'; ?>assets/css/header.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script>
     window.civentralBasePath = '<?php echo $basePath ?? '../'; ?>';
+    window.serverTime = '<?php echo date('c'); ?>'; // Server time in ISO 8601 format
     (function() {
       const savedTheme = localStorage.getItem('civentral_theme');
       if (savedTheme === 'dark') {
@@ -53,7 +38,10 @@ require_once __DIR__ . '/../src/bootstrap.php';
   <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 h-20 px-6 flex items-center justify-between sticky top-0 z-[90] shadow-xs shrink-0">
     <div class="flex items-center space-x-4 text-brand-dark">
         <div class="shrink-0 flex items-center justify-center">
-          <img src="<?php echo $basePath ?? '../'; ?>assets/images/logo.png" alt="Logo" class="h-16 w-auto object-contain">
+          <img src="<?php echo $basePath ?? '../'; ?>assets/images/logo.png" alt="Civentral Logo" class="h-12 w-auto object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div class="hidden items-center justify-center bg-brand-light rounded-lg p-2 border border-brand-border">
+            <span class="text-lg font-black text-brand-dark">CIV</span>
+          </div>
         </div>
     <div class="flex flex-col">
       <span class="text-base font-black tracking-[0.15em] uppercase leading-none dark:text-white">CIVENTRAL</span>
@@ -82,32 +70,10 @@ require_once __DIR__ . '/../src/bootstrap.php';
         <i id="themeToggleIcon" class="fa-solid fa-moon text-lg"></i>
       </button>
 
-      <!-- Notification Dropdown -->
-      <div class="relative" id="notifDropdownContainer">
-        <button id="notifDropdownBtn" onclick="window.civNotif.toggle(event)" class="header-action-btn p-2 text-slate-400 hover:text-brand-dark dark:hover:text-brand-medium cursor-pointer relative" title="System Notifications">
-          <i class="fa-solid fa-bell text-lg"></i>
-          <span id="notifBadge" class="hidden absolute top-1 right-1 px-1.5 py-0.5 text-[9px] font-black leading-none text-white bg-rose-500 rounded-full ring-2 ring-white dark:ring-slate-900">0</span>
-        </button>
-        
-        <!-- Notifications Dropdown Menu Card -->
-        <div id="notifDropdownMenu" class="hidden absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[100] transition-all transform scale-95 origin-top-right overflow-hidden flex flex-col">
-          <!-- Card Header -->
-          <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40 shrink-0">
-            <span class="font-black text-slate-800 dark:text-white uppercase tracking-wider text-xs">Notifications</span>
-            <button onclick="window.civNotif.markAllRead(event)" class="text-[10px] text-brand-medium hover:text-[#176B87] font-bold transition cursor-pointer">
-              Mark all read
-            </button>
-          </div>
-
-          <!-- Notification Items (Scrollable List) -->
-          <div id="notifItemsContainer" class="max-h-[360px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 custom-scrollbar">
-            <div class="py-12 text-center text-slate-400 dark:text-slate-500">
-              <i class="fa-solid fa-rotate-notch fa-spin text-xl mb-1.5 text-brand-medium"></i>
-              <p class="text-xs font-bold">Syncing notifications...</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <button class="header-action-btn p-2 text-slate-400 hover:text-brand-dark dark:hover:text-brand-medium cursor-pointer relative">
+        <i class="fa-solid fa-bell text-lg"></i>
+        <span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
+      </button>
       
       <div class="h-6 w-px bg-slate-200 dark:bg-slate-800"></div>
  

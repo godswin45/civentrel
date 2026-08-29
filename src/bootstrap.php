@@ -8,7 +8,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Load .env variables (no local database connection — all data comes from the remote API)
+// Load .env variables
 $envPath = __DIR__ . '/../.env';
 if (file_exists($envPath)) {
     $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -26,15 +26,30 @@ if (file_exists($envPath)) {
     }
 }
 
+// Load Database Config
+$configPath = __DIR__ . '/../config/database.php';
+if (file_exists($configPath)) {
+    require_once $configPath;
+}
+
 // Load Repositories
 require_once __DIR__ . '/Repositories/UserRepository.php';
 require_once __DIR__ . '/Repositories/PermissionRepository.php';
+if (file_exists(__DIR__ . '/Repositories/TreasuryRepository.php')) {
+    require_once __DIR__ . '/Repositories/TreasuryRepository.php';
+}
 
 // Load Services
 require_once __DIR__ . '/Services/AuthService.php';
 require_once __DIR__ . '/Services/UserService.php';
 require_once __DIR__ . '/Services/PermissionService.php';
 require_once __DIR__ . '/Services/HeaderService.php';
+if (file_exists(__DIR__ . '/Services/TreasuryService.php')) {
+    require_once __DIR__ . '/Services/TreasuryService.php';
+}
+if (file_exists(__DIR__ . '/Services/AuditService.php')) {
+    require_once __DIR__ . '/Services/AuditService.php';
+}
 
 // Load Middleware
 require_once __DIR__ . '/Middleware/SessionTimeout.php';
@@ -49,13 +64,16 @@ $currentBasePath = $basePath ?? '../';
 $sessionTimeout = new \App\Middleware\SessionTimeout(1800, $currentBasePath);
 $sessionTimeout->handle();
 
-// Initialize Repositories (no local DB — they use the remote API via session cache)
+// Initialize Repositories
 $userRepo = new \App\Repositories\UserRepository(null);
 $permRepo = new \App\Repositories\PermissionRepository(null);
+$treasuryRepo = class_exists('\App\Repositories\TreasuryRepository') ? new \App\Repositories\TreasuryRepository($db ?? null) : null;
 
 // Initialize Services
 $userService = new \App\Services\UserService($userRepo);
 $permService = new \App\Services\PermissionService($permRepo);
+$treasuryService = class_exists('\App\Services\TreasuryService') ? new \App\Services\TreasuryService($treasuryRepo, $db ?? null) : null;
+$auditService = class_exists('\App\Services\AuditService') ? new \App\Services\AuditService($treasuryRepo, $db ?? null) : null;
 
 // Initialize Header Service (and build user)
 $headerService = new \App\Services\HeaderService($userService, $permService, $authService);
