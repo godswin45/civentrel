@@ -23,8 +23,19 @@ $recaptchaSiteKey = getenv('RECAPTCHA_SITE_KEY') ?: '';
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Civentral</title>
+  <title>Employee Login – Civentral Portal</title>
+  <meta name="description" content="Secure employee login portal for the Civentral Digital Government Platform of Caloocan City.">
+  <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/png" href="assets/images/logo.png">
+
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style type="text/tailwindcss">
@@ -33,10 +44,13 @@ $recaptchaSiteKey = getenv('RECAPTCHA_SITE_KEY') ?: '';
     --color-brand-border: #B4D4FF;
     --color-brand-medium: #86B6F6;
     --color-brand-dark: #176B87;
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   }
+  html { scroll-behavior: smooth; }
 </style>
   
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
 </head>
 <body class="bg-white min-h-screen font-sans antialiased selection:bg-brand-medium selection:text-white">
 
@@ -85,7 +99,8 @@ $recaptchaSiteKey = getenv('RECAPTCHA_SITE_KEY') ?: '';
           </div>
         </div>
 
-        <form id="loginForm" class="space-y-3" onsubmit="handleLogin(event)">
+        <form id="loginForm" class="space-y-3" onsubmit="handleLogin(event)"
+          data-bypass-otp="<?php echo (getenv('BYPASS_OTP') === 'false' || getenv('BYPASS_OTP') === '0') ? 'false' : 'true'; ?>">
     
         <div class="space-y-1">
           <label for="employeeId" class="text-xs font-semibold text-gray-500">Employee ID</label>
@@ -260,6 +275,6 @@ $recaptchaSiteKey = getenv('RECAPTCHA_SITE_KEY') ?: '';
     </div>
   </div>
 
-  <script src="assets/js/login.js"></script>
+  <script src="assets/js/login.js?v=<?php echo filemtime(__DIR__ . '/assets/js/login.js'); ?>"></script>
 </body>
 </html>

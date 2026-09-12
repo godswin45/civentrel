@@ -37,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $auditService->logTransaction([
                 'user_id' => $_SESSION['user_id'] ?? null,
                 'username' => $headerUser['full_name'] ?? 'System',
+                'module' => 'budget',
                 'action' => 'create',
                 'table_name' => 'tr_budget_requests',
                 'record_id' => $createdRequest['id'] ?? null,
@@ -96,6 +97,25 @@ include __DIR__ . '/../../includes/sidebar.php';
         <i class="fa-solid fa-circle-check mt-0.5"></i><span><?= htmlspecialchars($successMsg) ?></span>
       </div>
       <?php endif; ?>
+      <?php if (!empty($_GET['imported'])): ?>
+      <div class="bg-sky-50 border border-sky-200 text-sky-700 rounded-2xl p-4 text-xs font-medium flex items-start space-x-2">
+        <i class="fa-solid fa-file-import mt-0.5"></i><span><?= htmlspecialchars($_GET['imported']) ?></span>
+      </div>
+      <?php endif; ?>
+
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs p-5">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 class="text-sm font-extrabold text-slate-800">Import budget requests</h2>
+            <p class="text-[11px] text-slate-400 mt-1">CSV, Excel, or JSON, up to 1,000 rows. Required: department, project, amount.</p>
+          </div>
+          <form method="post" action="../treasury/import-financial-data.php" enctype="multipart/form-data" class="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="target" value="budget">
+            <input type="file" name="import_file" accept=".csv,.xlsx,.json" required class="max-w-xs text-xs text-slate-500">
+            <button type="submit" class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-2 rounded-lg text-xs transition"><i class="fa-solid fa-file-import"></i> Import</button>
+          </form>
+        </div>
+      </div>
 
       <!-- Stats -->
       <div class="grid grid-cols-1 sm:grid-cols-4 gap-5">

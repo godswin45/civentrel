@@ -24,6 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'budget',
                     'action' => 'approve',
                     'table_name' => 'tr_budget_requests',
                     'record_id' => $_POST['request_id'],
@@ -41,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'budget',
                     'action' => 'reject',
                     'table_name' => 'tr_budget_requests',
                     'record_id' => $_POST['request_id'],
@@ -56,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'budget',
                     'action' => 'disburse',
                     'table_name' => 'tr_budget_requests',
                     'record_id' => $_POST['request_id'],
@@ -114,10 +117,21 @@ include __DIR__ . '/../../includes/sidebar.php';
       <?php endif; ?>
 
       <!-- Budget Requests Table -->
-      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
-        <div class="p-5 border-b border-slate-100">
-          <h2 class="text-sm font-extrabold text-slate-800">Pending Budget Requests</h2>
-          <span class="text-[11px] text-slate-400"><?= count(array_filter($budgetRequests, fn($r) => $r['status'] === 'Pending')) ?> pending requests</span>
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+        <div class="p-5 md:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <div class="h-8 w-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                <i class="fa-solid fa-file-circle-check text-sm"></i>
+              </div>
+              <h2 class="text-sm font-extrabold text-slate-800">Budget Requests</h2>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">Review, approve, or reject submitted department requests.</p>
+          </div>
+          <span class="inline-flex items-center gap-1.5 self-start sm:self-auto bg-amber-50 text-amber-700 text-[11px] font-bold px-3 py-1.5 rounded-full">
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+            <?= count(array_filter($budgetRequests, fn($r) => strtolower((string) ($r['status'] ?? '')) === 'pending')) ?> pending
+          </span>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
@@ -134,40 +148,44 @@ include __DIR__ . '/../../includes/sidebar.php';
             </thead>
             <tbody class="divide-y divide-slate-100">
               <?php foreach ($budgetRequests as $request): ?>
-              <tr class="hover:bg-brand-light/40 transition">
-                <td class="px-5 py-3 font-mono text-slate-500"><?= htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '') ?></td>
-                <td class="px-5 py-3 font-semibold text-slate-700"><?= htmlspecialchars($request['department_name']) ?></td>
-                <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?></td>
-                <td class="px-5 py-3 font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($request['requested_amount']) ?></td>
-                <td class="px-5 py-3 text-slate-500 max-w-xs truncate"><?= htmlspecialchars($request['justification'] ?? '-') ?></td>
+              <?php $status = strtolower((string) ($request['status'] ?? '')); ?>
+              <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-4 font-mono text-[11px] font-semibold text-slate-500 whitespace-nowrap"><?= htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '') ?></td>
+                <td class="px-5 py-4 font-semibold text-slate-700 whitespace-nowrap"><?= htmlspecialchars($request['department_name']) ?></td>
+                <td class="px-5 py-4 text-slate-600 max-w-[220px] truncate" title="<?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>"><?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?></td>
+                <td class="px-5 py-4 font-mono font-bold text-slate-800 whitespace-nowrap"><?= $treasuryService->formatPeso($request['requested_amount']) ?></td>
+                <td class="px-5 py-4 text-slate-500 max-w-[220px] truncate" title="<?= htmlspecialchars($request['justification'] ?? '-') ?>"><?= htmlspecialchars($request['justification'] ?? '-') ?></td>
                 <td class="px-5 py-3">
                   <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase
-                    <?= strtolower($request['status']) === 'approved' ? 'bg-emerald-100 text-emerald-700' : 
-                       (strtolower($request['status']) === 'pending' ? 'bg-amber-100 text-amber-700' : 
-                       (strtolower($request['status']) === 'released' ? 'bg-teal-100 text-teal-700' : 
-                       (strtolower($request['status']) === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'))) ?>">
+                      <?= $status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 
+                        ($status === 'pending' ? 'bg-amber-100 text-amber-700' : 
+                        ($status === 'released' ? 'bg-teal-100 text-teal-700' : 
+                        ($status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'))) ?>">
                     <?= htmlspecialchars($request['status']) ?>
                   </span>
                 </td>
-                <td class="px-5 py-3">
-                  <?php if (strtolower($request['status']) === 'pending'): ?>
-                    <div class="flex items-center gap-2">
+                <td class="px-5 py-4 min-w-[260px]">
+                  <div class="flex flex-wrap items-center gap-2">
+                  <a href="download-budget-request.php?id=<?= (int) $request['id'] ?>" download title="Download request document" class="inline-flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-lg text-[11px] transition">
+                    <i class="fa-solid fa-download"></i> Document
+                  </a>
+                  <?php if ($status === 'pending'): ?>
                       <form method="post" class="inline">
                         <input type="hidden" name="action" value="approve">
                         <input type="hidden" name="request_id" value="<?= $request['id'] ?>">
-                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition">Approve</button>
+                        <button type="submit" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-lg text-[11px] transition"><i class="fa-solid fa-check"></i> Approve</button>
                       </form>
-                      <button onclick="showRejectModal(<?= $request['id'] ?>, '<?= htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '') ?>')" class="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition">Reject</button>
-                    </div>
-                  <?php elseif (strtolower($request['status']) === 'approved'): ?>
+                      <button onclick="showRejectModal(<?= $request['id'] ?>, '<?= htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '') ?>')" class="inline-flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 font-bold px-3 py-2 rounded-lg text-[11px] transition"><i class="fa-solid fa-xmark"></i> Reject</button>
+                  <?php elseif ($status === 'approved'): ?>
                     <form method="post" class="inline">
                       <input type="hidden" name="action" value="release">
                       <input type="hidden" name="request_id" value="<?= $request['id'] ?>">
-                      <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-1. rounded-lg text-xs transition">Release</button>
+                      <button type="submit" class="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-lg text-[11px] transition"><i class="fa-solid fa-paper-plane"></i> Release</button>
                     </form>
                   <?php else: ?>
-                    <span class="text-slate-400 text-xs">No actions</span>
+                    <span class="text-slate-400 text-[11px]">No further action</span>
                   <?php endif; ?>
+                  </div>
                 </td>
               </tr>
               <?php endforeach; ?>

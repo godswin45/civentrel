@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 // Auth check
 if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../../login.php');
     exit;
 }
 

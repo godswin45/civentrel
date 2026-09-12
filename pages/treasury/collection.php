@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 // Auth check
 if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../../login.php');
     exit;
 }
 
@@ -118,10 +118,20 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
           <?php endif; ?>
 
+          <?php
+            $payerNames = array_unique(array_filter(array_column($collections, 'payer_name')));
+            sort($payerNames);
+          ?>
           <div class="space-y-1.5">
             <label class="text-xs font-semibold text-gray-500">Payer name</label>
             <input type="text" name="payer_name" required value="<?= htmlspecialchars($bizName) ?>" placeholder="e.g. Dela Cruz, Marites"
+              list="payer-names-list" autocomplete="off"
               class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+            <datalist id="payer-names-list">
+              <?php foreach ($payerNames as $pn): ?>
+              <option value="<?= htmlspecialchars($pn) ?>">
+              <?php endforeach; ?>
+            </datalist>
           </div>
 
           <div class="space-y-1.5">
@@ -137,8 +147,21 @@ include __DIR__ . '/../../includes/sidebar.php';
             <div class="space-y-1.5">
               <label class="text-xs font-semibold text-gray-500">Fund</label>
               <select name="fund_id" class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+                <?php
+                $fundLabels = [
+                    'BSF' => 'Business Service Fund',
+                    'EDU' => 'Education Fund',
+                    'GF' => 'General Fund',
+                    'HLTH' => 'Health Fund',
+                    'INFRA' => 'Infrastructure Fund',
+                    'MSF' => 'Market Stall Fund',
+                    'PTF' => 'Property Tax Fund',
+                    'RDF' => 'Risk Disaster Fund',
+                ];
+                ?>
                 <?php foreach ($funds as $f): ?>
-                  <option value="<?= htmlspecialchars($f['id']) ?>"><?= htmlspecialchars($f['code']) ?></option>
+                  <?php $code = strtoupper((string) ($f['code'] ?? '')); ?>
+                  <option value="<?= htmlspecialchars($f['id']) ?>"><?= htmlspecialchars($fundLabels[$code] ?? $code) ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
@@ -146,7 +169,6 @@ include __DIR__ . '/../../includes/sidebar.php';
               <label class="text-xs font-semibold text-gray-500">Mode</label>
               <select name="payment_mode" class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
                 <option value="cash">Cash</option>
-                <option value="check">Check</option>
                 <option value="online">Online / E-wallet</option>
               </select>
             </div>
@@ -168,42 +190,123 @@ include __DIR__ . '/../../includes/sidebar.php';
         </form>
 
         <div class="lg:col-span-3 bg-white border border-slate-200 rounded-xl shadow-xs p-5">
-          <h2 class="text-sm font-extrabold text-slate-800 pb-3 border-b border-slate-100 mb-4">Official Receipt</h2>
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <h2 class="text-sm font-extrabold text-slate-800">Official Receipt</h2>
+            <?php if ($lastReceipt): ?>
+            <button type="button" onclick="window.print()"
+              class="inline-flex items-center gap-2 bg-brand-dark hover:opacity-90 text-white font-bold px-3 py-2 rounded-lg text-xs transition shadow-sm no-print">
+              <i class="fa-solid fa-print"></i> Print Receipt
+            </button>
+            <?php endif; ?>
+          </div>
+
           <?php if ($lastReceipt): ?>
-            <div class="border-2 border-brand-border rounded-2xl p-8 bg-gradient-to-b from-brand-light/80 to-white relative w-full">
-              <div class="flex justify-between items-start border-b-2 border-dashed border-brand-border pb-4 mb-4">
-                <div>
-                  <div class="text-lg font-black text-brand-dark">Official Receipt</div>
-                  <div class="text-xs uppercase tracking-wider text-slate-400">Municipal Treasurer's Office</div>
-                </div>
+          <div id="or-print-area" class="border-2 border-brand-border rounded-2xl p-8 bg-gradient-to-b from-brand-light/80 to-white">
+
+            <!-- Print letterhead — hidden on screen -->
+            <div class="or-print-only text-center mb-4 pb-3 border-b-2 border-dashed border-brand-border">
+              <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Republic of the Philippines</p>
+              <p class="text-sm font-black uppercase text-slate-900"><?= htmlspecialchars(getenv('LGU_NAME') ?: 'Municipality') ?></p>
+              <p class="text-xs text-slate-500">Office of the Municipal Treasurer</p>
+            </div>
+
+            <div class="flex justify-between items-start border-b-2 border-dashed border-brand-border pb-4 mb-4">
+              <div>
+                <div class="text-lg font-black text-brand-dark">Official Receipt</div>
+                <div class="text-xs uppercase tracking-wider text-slate-400">Municipal Treasurer's Office</div>
+              </div>
+              <div class="text-right">
                 <div class="font-mono text-sm font-bold text-brand-dark"><?= htmlspecialchars($lastReceipt['or_number']) ?></div>
+                <div class="text-[10px] text-slate-400 mt-0.5"><?= date('F j, Y g:i A', strtotime($lastReceipt['created_at'])) ?></div>
               </div>
-              <dl class="space-y-3 text-sm">
-                <div class="flex justify-between"><dt class="text-slate-500 font-semibold">Received from</dt><dd class="font-bold text-slate-800"><?= htmlspecialchars($lastReceipt['payer_name']) ?></dd></div>
-                <div class="flex justify-between"><dt class="text-slate-500 font-semibold">Nature of collection</dt><dd class="font-bold text-slate-800"><?= htmlspecialchars($lastReceipt['revenue_source']) ?></dd></div>
-                <div class="flex justify-between"><dt class="text-slate-500 font-semibold">Payment mode</dt><dd class="font-bold text-slate-800"><?= htmlspecialchars($lastReceipt['payment_mode']) ?></dd></div>
-                <div class="flex justify-between border-t-2 border-slate-200 pt-3 mt-3"><dt class="text-slate-500 font-semibold">Amount</dt><dd class="font-black text-brand-dark text-2xl"><?= $treasuryService->formatPeso($lastReceipt['amount']) ?></dd></div>
-              </dl>
-              <div class="mt-6 pt-4 border-t-2 border-dashed border-brand-border text-xs text-slate-500">
-                <div class="flex justify-between">
-                  <span>Collected by: <?= htmlspecialchars($lastReceipt['collected_by'] ?? 'System') ?></span>
-                  <span><?= date('M j, Y g:i A', strtotime($lastReceipt['created_at'])) ?></span>
+            </div>
+
+            <dl class="space-y-3 text-sm">
+              <div class="flex justify-between"><dt class="text-slate-500 font-semibold">Received from</dt><dd class="font-bold text-slate-800"><?= htmlspecialchars($lastReceipt['payer_name']) ?></dd></div>
+              <div class="flex justify-between"><dt class="text-slate-500 font-semibold">Nature of collection</dt><dd class="font-bold text-slate-800"><?= htmlspecialchars($lastReceipt['revenue_source']) ?></dd></div>
+              <div class="flex justify-between"><dt class="text-slate-500 font-semibold">Payment mode</dt><dd class="font-bold text-slate-800"><?= htmlspecialchars(ucfirst($lastReceipt['payment_mode'])) ?></dd></div>
+              <div class="flex justify-between border-t-2 border-slate-200 pt-3 mt-3">
+                <dt class="text-slate-500 font-semibold self-end">Amount</dt>
+                <dd class="font-black text-brand-dark text-2xl"><?= $treasuryService->formatPeso($lastReceipt['amount']) ?></dd>
+              </div>
+            </dl>
+
+            <div class="mt-6 pt-4 border-t-2 border-dashed border-brand-border text-xs text-slate-500">
+              <div class="flex justify-between">
+                <span>Collected by: <?= htmlspecialchars($lastReceipt['collected_by'] ?? 'System') ?></span>
+                <span class="font-mono"><?= htmlspecialchars($lastReceipt['or_number']) ?></span>
+              </div>
+              <!-- Signature block — print only -->
+              <div class="or-print-only mt-10 grid grid-cols-2 gap-10">
+                <div>
+                  <div class="border-b border-slate-700 pb-1 mt-8"></div>
+                  <p class="text-xs font-bold text-slate-800 mt-1"><?= htmlspecialchars($lastReceipt['collected_by'] ?? 'Cashier') ?></p>
+                  <p class="text-[10px] text-slate-500">Collecting Officer</p>
+                </div>
+                <div>
+                  <div class="border-b border-slate-700 pb-1 mt-8"></div>
+                  <p class="text-xs font-bold text-slate-800 mt-1">Municipal Treasurer</p>
+                  <p class="text-[10px] text-slate-500"><?= htmlspecialchars(getenv('LGU_NAME') ?: 'Municipality') ?></p>
                 </div>
               </div>
             </div>
+          </div>
+
           <?php else: ?>
-            <div class="text-center py-12 text-slate-400">
-              <i class="fa-solid fa-receipt text-4xl mb-3 opacity-30"></i>
-              <p class="text-xs">No receipt issued yet. Record a payment to generate one.</p>
+          <div class="flex flex-col items-center text-center py-12 gap-3 text-slate-400">
+            <div class="h-14 w-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+              <i class="fa-solid fa-receipt text-3xl text-slate-300"></i>
             </div>
+            <p class="text-xs font-bold">No receipt issued yet</p>
+            <p class="text-[11px]">Record a payment on the left to generate an official receipt.</p>
+          </div>
           <?php endif; ?>
         </div>
       </div>
+
       <!-- Transaction History -->
-      <?php 
+      <?php
       $module = 'collection';
       $limit = 5;
       include __DIR__ . '/../../includes/transaction_history.php';
       ?>
     </main>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
+<style>
+  .or-print-only { display: none; }
+  @media print {
+    /* Hide all chrome */
+    aside, header, nav, footer, form,
+    .no-print, .lg\:col-span-2 { display: none !important; }
+
+    body, html { background: #fff !important; margin: 0; padding: 0; }
+
+    main { width: 100% !important; padding: 16px !important; margin: 0 !important;
+           overflow: visible !important; display: block !important; }
+
+    /* Expand receipt column to full width */
+    .grid { display: block !important; }
+    .lg\:col-span-3 {
+      width: 100% !important; border: none !important;
+      box-shadow: none !important; padding: 0 !important;
+    }
+    /* Header row inside the card (Print Receipt button) */
+    .lg\:col-span-3 > div:first-child { border: none !important; padding: 0 !important; margin-bottom: 0 !important; }
+
+    /* The receipt area */
+    #or-print-area {
+      border: 1.5px solid #94a3b8 !important;
+      border-radius: 0 !important;
+      background: #fff !important;
+      padding: 28px !important;
+      max-width: 440px;
+      margin: 0 auto;
+    }
+
+    /* Show print-only elements */
+    .or-print-only { display: block !important; }
+
+    .shadow-xs, .shadow-sm { box-shadow: none !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>

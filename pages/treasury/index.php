@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 // Auth check
 if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../../login.php');
     exit;
 }
 
@@ -32,10 +32,26 @@ $pendingTotal = array_sum(array_column($pendingVouchers, 'amount'));
 $pendingBudgetRequests = array_filter($budgetRequests, fn($b) => strtolower($b['status']) === 'pending');
 $pendingBudgetTotal = array_sum(array_column($pendingBudgetRequests, 'requested_amount'));
 
-// Calculate monthly collections
+// Current month totals
 $thisMonth = date('Y-m');
 $monthlyCollections = array_filter($allCollections, fn($c) => substr($c['created_at'], 0, 7) === $thisMonth);
 $monthlyTotal = array_sum(array_column($monthlyCollections, 'amount'));
+
+// Month-over-month % change badge
+$prevMonth = date('Y-m', mktime(0, 0, 0, date('n') - 1, 1));
+$prevMonthCollections = array_filter($allCollections, fn($c) => substr($c['created_at'], 0, 7) === $prevMonth);
+$prevMonthTotal = array_sum(array_column($prevMonthCollections, 'amount'));
+$monthlyChangePct = $prevMonthTotal > 0
+    ? round((($monthlyTotal - $prevMonthTotal) / $prevMonthTotal) * 100, 1)
+    : null;
+
+// Yesterday comparison for Today's Collections badge
+$yesterday = date('Y-m-d', strtotime('-1 day'));
+$yesterdayCollections = array_filter($allCollections, fn($c) => substr($c['created_at'], 0, 10) === $yesterday);
+$yesterdayTotal = array_sum(array_column($yesterdayCollections, 'amount'));
+$todayChangePct = $yesterdayTotal > 0
+    ? round((($todayTotal - $yesterdayTotal) / $yesterdayTotal) * 100, 1)
+    : null;
 
 // Calculate collection by revenue source
 $revenueSources = [];
@@ -45,6 +61,56 @@ foreach ($allCollections as $collection) {
         $revenueSources[$source] = 0;
     }
     $revenueSources[$source] += $collection['amount'];
+}
+arsort($revenueSources);
+
+// Build 12-month trend data (current month + 11 previous)
+$monthlyTrend = [];
+for ($i = 11; $i >= 0; $i--) {
+    $ts    = mktime(0, 0, 0, date('n') - $i, 1);
+    $key   = date('Y-m', $ts);               // e.g. "2026-09"
+    $label = date('M Y', $ts);               // e.g. "Sep 2026"
+    $monthlyTrend[$key] = ['label' => $label, 'total' => 0];
+}
+foreach ($allCollections as $c) {
+    $key = substr($c['created_at'], 0, 7);
+    if (isset($monthlyTrend[$key])) {
+        $monthlyTrend[$key]['total'] += (float) $c['amount'];
+    }
+}
+$trendLabels = array_column(array_values($monthlyTrend), 'label');   // JS array
+$trendTotals = array_column(array_values($monthlyTrend), 'total');    // JS array
+
+// ── Alert computations ───────────────────────────────────────────
+$alerts = [];
+
+// 1. Low fund balance (< 15% of opening)
+foreach ($funds as $f) {
+    $opening = (float)($f['opening_balance'] ?? 0);
+    $balance = (float)($f['balance'] ?? 0);
+    if ($opening > 0 && $balance / $opening < 0.15) {
+        $pct = round($balance / $opening * 100);
+        $alerts[] = ['level'=>'danger','icon'=>'fa-triangle-exclamation',
+            'msg'=>'<strong>'.htmlspecialchars($f['name']??'Fund').'</strong> is critically low — only <strong>'.$pct.'%</strong> ('.$treasuryService->formatPeso($balance).') remaining.',
+            'link'=>null];
+    }
+}
+
+// 2. Stale vouchers pending > 3 days
+$staleVouchers = array_filter($pendingVouchers, fn($v) => (time() - strtotime($v['created_at'] ?? 'now')) > 259200);
+if (count($staleVouchers)) {
+    $n = count($staleVouchers);
+    $alerts[] = ['level'=>'warning','icon'=>'fa-clock-rotate-left',
+        'msg'=>'<strong>'.$n.' voucher'.($n>1?'s have':' has').'</strong> been pending over 3 days.',
+        'link'=>['href'=>'disbursement.php','label'=>'Review →']];
+}
+
+// 3. Pending budget requests
+if (count($pendingBudgetRequests)) {
+    $n = count($pendingBudgetRequests);
+    $alerts[] = ['level'=>'info','icon'=>'fa-file-circle-question',
+        'msg'=>'<strong>'.$n.' budget request'.($n>1?'s':'').'</strong> awaiting approval — '.$treasuryService->formatPeso($pendingBudgetTotal).' total.',
+        'link'=>['href'=>'budget-approvals.php','label'=>'Review →']];
 }
 
 $basePath = '../../';
@@ -78,20 +144,51 @@ include __DIR__ . '/../../includes/sidebar.php';
       </div>
       <?php endif; ?>
 
-      <!-- Metric Cards -->
+            <?php if (!empty($alerts)):
+        $cls  = ['danger'=>'bg-red-50 border-red-300 text-red-800','warning'=>'bg-amber-50 border-amber-300 text-amber-800','info'=>'bg-blue-50 border-blue-300 text-blue-800'];
+        $icls = ['danger'=>'text-red-500','warning'=>'text-amber-500','info'=>'text-blue-500'];
+      ?>
+      <div class="space-y-2">
+        <?php foreach ($alerts as $i => $a): ?>
+        <div id="alrt-<?= $i ?>" class="flex items-start justify-between gap-3 border rounded-xl px-4 py-3 text-xs <?= $cls[$a['level']] ?>">
+          <div class="flex items-start gap-2.5 min-w-0">
+            <i class="fa-solid <?= $a['icon'] ?> mt-0.5 shrink-0 <?= $icls[$a['level']] ?>"></i>
+            <span class="leading-relaxed"><?= $a['msg'] ?><?php if ($a['link']): ?>
+              <a href="<?= htmlspecialchars($a['link']['href']) ?>" class="ml-1 underline font-bold hover:opacity-80"><?= htmlspecialchars($a['link']['label']) ?></a>
+            <?php endif; ?></span>
+          </div>
+          <button onclick="document.getElementById('alrt-<?= $i ?>').remove()"
+            class="shrink-0 opacity-40 hover:opacity-100 transition ml-2 mt-0.5" title="Dismiss">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <?php endforeach; ?>
+      </div>
+      <?php endif; ?>
+
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+        <!-- Today's Collections -->
         <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between group relative overflow-hidden">
           <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
           <div class="space-y-1">
             <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today's Collections</span>
             <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= $treasuryService->formatPeso($todayTotal) ?></h3>
-            <p class="text-[11px] text-emerald-600 font-semibold"><?= count($todayCollections) ?> receipts today</p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[11px] text-emerald-600 font-semibold"><?= count($todayCollections) ?> receipts today</p>
+              <?php if ($todayChangePct !== null): ?>
+              <span class="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full <?= $todayChangePct >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500' ?>">
+                <i class="fa-solid <?= $todayChangePct >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down' ?>"></i>
+                <?= ($todayChangePct >= 0 ? '+' : '') . $todayChangePct ?>% vs yesterday
+              </span>
+              <?php endif; ?>
+            </div>
           </div>
           <div class="h-10 w-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-slate-100 transition">
             <i class="fa-solid fa-sack-dollar text-sm"></i>
           </div>
         </div>
 
+        <!-- Treasury Balance -->
         <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between group relative overflow-hidden">
           <div class="absolute top-0 left-0 w-1.5 h-full bg-brand-dark"></div>
           <div class="space-y-1">
@@ -104,18 +201,28 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
         </div>
 
+        <!-- Monthly Collections -->
         <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between group relative overflow-hidden">
           <div class="absolute top-0 left-0 w-1.5 h-full bg-purple-500"></div>
           <div class="space-y-1">
             <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Monthly Collections</span>
             <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= $treasuryService->formatPeso($monthlyTotal) ?></h3>
-            <p class="text-[11px] text-purple-600 font-semibold"><?= count($monthlyCollections) ?> receipts this month</p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[11px] text-purple-600 font-semibold"><?= count($monthlyCollections) ?> receipts this month</p>
+              <?php if ($monthlyChangePct !== null): ?>
+              <span class="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full <?= $monthlyChangePct >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500' ?>">
+                <i class="fa-solid <?= $monthlyChangePct >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down' ?>"></i>
+                <?= ($monthlyChangePct >= 0 ? '+' : '') . $monthlyChangePct ?>% vs last month
+              </span>
+              <?php endif; ?>
+            </div>
           </div>
           <div class="h-10 w-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-slate-100 transition">
             <i class="fa-solid fa-calendar-days text-sm"></i>
           </div>
         </div>
 
+        <!-- Pending Requests -->
         <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between group relative overflow-hidden">
           <div class="absolute top-0 left-0 w-1.5 h-full bg-amber-500"></div>
           <div class="space-y-1">
@@ -128,6 +235,7 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
         </div>
 
+        <!-- Total Receipts -->
         <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between group relative overflow-hidden">
           <div class="absolute top-0 left-0 w-1.5 h-full bg-slate-500"></div>
           <div class="space-y-1">
@@ -141,48 +249,99 @@ include __DIR__ . '/../../includes/sidebar.php';
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-2 bg-white border border-slate-200/80 rounded-2xl shadow-xs">
-          <div class="p-5 border-b border-slate-100 flex items-center justify-between">
-            <h2 class="text-sm font-extrabold text-slate-800">Fund Balances</h2>
-            <a href="disbursement.php" class="text-[11px] font-bold text-brand-dark hover:underline">Manage &rarr;</a>
-          </div>
-          <div class="p-5 space-y-5">
-            <?php
-            $maxBal = max(array_column($funds, 'balance') ?: [1]);
-            foreach ($funds as $f):
-              $pct = max(6, round(($f['balance'] / max($maxBal, 1)) * 100));
-            ?>
+      <!-- ═══════════════════════════════════════════════════════════
+           CHART ROW 1 — 12-Month Trend + Revenue Donut
+      ══════════════════════════════════════════════════════════════ -->
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+        <!-- 12-Month Collection Trend (bar chart) -->
+        <div class="xl:col-span-2 bg-white border border-slate-200/80 rounded-2xl shadow-xs flex flex-col">
+          <div class="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
             <div>
-              <div class="flex items-baseline justify-between mb-1.5">
-                <span class="text-xs font-bold text-slate-700"><?= htmlspecialchars($f['name']) ?> <span class="text-slate-400 font-medium">· <?= htmlspecialchars($f['code']) ?></span></span>
-                <span class="text-xs font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($f['balance']) ?></span>
-              </div>
-              <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
-                <div class="h-full rounded-full bg-gradient-to-r from-brand-medium to-brand-dark" style="width:<?= $pct ?>%"></div>
-              </div>
+              <h2 class="text-sm font-extrabold text-slate-800">12-Month Collection Trend</h2>
+              <p class="text-[11px] text-slate-400 mt-0.5">Monthly revenue collected over the last year</p>
             </div>
-            <?php endforeach; ?>
-            <?php if (empty($funds)): ?>
-              <p class="text-xs text-slate-400">No fund data yet — run the SQL schema.</p>
+            <div class="flex items-center gap-3">
+              <?php if ($monthlyChangePct !== null): ?>
+              <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full
+                <?= $monthlyChangePct >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500' ?>">
+                <i class="fa-solid <?= $monthlyChangePct >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down' ?>"></i>
+                <?= ($monthlyChangePct >= 0 ? '+' : '') . $monthlyChangePct ?>% vs last month
+              </span>
+              <?php endif; ?>
+              <a href="reports.php" class="text-[11px] font-bold text-brand-dark hover:underline">Full report &rarr;</a>
+            </div>
+          </div>
+          <div class="p-5 flex-1 min-h-0">
+            <div style="position:relative; height:240px;">
+              <canvas id="trendChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Revenue Source Donut -->
+        <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs flex flex-col">
+          <div class="p-5 border-b border-slate-100 shrink-0">
+            <h2 class="text-sm font-extrabold text-slate-800">Revenue by Source</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">All-time collection breakdown</p>
+          </div>
+          <div class="p-5 flex-1 flex flex-col items-center justify-center gap-4">
+            <?php if (!empty($revenueSources)): ?>
+            <div style="position:relative; height:180px; width:180px;">
+              <canvas id="donutChart"></canvas>
+            </div>
+            <!-- Legend -->
+            <div class="w-full space-y-2 mt-1" id="donutLegend"></div>
+            <?php else: ?>
+            <div class="flex flex-col items-center py-8 text-slate-400">
+              <i class="fa-solid fa-chart-pie text-3xl opacity-25 mb-2"></i>
+              <p class="text-xs">No revenue data yet</p>
+            </div>
             <?php endif; ?>
           </div>
         </div>
 
-        <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
-          <div class="p-5 border-b border-slate-100 flex items-center justify-between">
-            <h2 class="text-sm font-extrabold text-slate-800">Revenue Sources</h2>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           CHART ROW 2 — Fund Balances (bar) + Progress legend
+      ══════════════════════════════════════════════════════════════ -->
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-extrabold text-slate-800">Fund Balances</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">Current balance across all active funds</p>
           </div>
-          <div class="p-5 space-y-3">
-            <?php if (!empty($revenueSources)): ?>
-              <?php foreach ($revenueSources as $source => $amount): ?>
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-medium text-slate-700"><?= htmlspecialchars($source) ?></span>
-                <span class="text-xs font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($amount) ?></span>
+          <a href="disbursement.php" class="text-[11px] font-bold text-brand-dark hover:underline">Manage &rarr;</a>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+          <!-- Bar chart -->
+          <div class="p-5">
+            <div style="position:relative; height:220px;">
+              <canvas id="fundChart"></canvas>
+            </div>
+          </div>
+          <!-- Progress bars legend -->
+          <div class="p-5 space-y-4">
+            <?php if (!empty($funds)):
+              $maxBal = max(array_column($funds, 'balance') ?: [1]);
+              foreach ($funds as $f):
+                $pct = max(4, round(($f['balance'] / max($maxBal, 1)) * 100));
+            ?>
+            <div>
+              <div class="flex items-baseline justify-between mb-1">
+                <span class="text-xs font-bold text-slate-700 truncate max-w-[60%]"><?= htmlspecialchars($f['name']) ?>
+                  <span class="text-slate-400 font-medium">· <?= htmlspecialchars($f['code']) ?></span>
+                </span>
+                <span class="text-xs font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($f['balance']) ?></span>
               </div>
-              <?php endforeach; ?>
-            <?php else: ?>
-              <p class="text-xs text-slate-400">No revenue data yet</p>
+              <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div class="h-full rounded-full bg-gradient-to-r from-brand-medium to-brand-dark transition-all duration-700" style="width:<?= $pct ?>%"></div>
+              </div>
+            </div>
+            <?php endforeach; endif; ?>
+            <?php if (empty($funds)): ?>
+              <p class="text-xs text-slate-400">No fund data yet — run the SQL schema.</p>
             <?php endif; ?>
           </div>
         </div>
@@ -266,40 +425,151 @@ include __DIR__ . '/../../includes/sidebar.php';
         </div>
       </div>
 
-      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
-        <div class="p-5 border-b border-slate-100 flex items-center justify-between">
-          <h2 class="text-sm font-extrabold text-slate-800">Recent Transactions</h2>
-          <a href="collection.php" class="text-[11px] font-bold text-brand-dark hover:underline">View all &rarr;</a>
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs" id="recent-tx-card">
+        <!-- Card header -->
+        <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <h2 class="text-sm font-extrabold text-slate-800">Recent Transactions</h2>
+            <span id="tx-count-badge"
+              class="inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              <?= count($recent) ?> records
+            </span>
+          </div>
+          <!-- Search + Filter controls -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="relative">
+              <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
+              <input type="text" id="tx-search"
+                placeholder="Search OR#, payer, source…"
+                class="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg w-52 focus:ring-2 focus:ring-brand-medium/30 focus:border-brand-medium outline-none transition"
+                oninput="filterTransactions()">
+            </div>
+            <select id="tx-mode-filter" onchange="filterTransactions()"
+              class="text-xs border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-medium/30 focus:border-brand-medium outline-none transition text-slate-600 bg-white">
+              <option value="">All modes</option>
+              <?php
+                $modes = array_unique(array_map(
+                    fn($c) => ucfirst(strtolower($c['payment_mode'] ?? 'Cash')),
+                    $recent
+                ));
+                foreach ($modes as $m): ?>
+              <option value="<?= htmlspecialchars(strtolower($m)) ?>"><?= htmlspecialchars($m) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <button onclick="clearTxFilters()"
+              id="tx-clear-btn"
+              class="hidden text-[11px] font-bold text-slate-400 hover:text-brand-dark px-2 py-2 rounded-lg transition">
+              <i class="fa-solid fa-xmark"></i> Clear
+            </button>
+            <a href="collection.php" class="text-[11px] font-bold text-brand-dark hover:underline whitespace-nowrap">View all &rarr;</a>
+          </div>
         </div>
+
         <div class="overflow-x-auto">
-          <table class="w-full text-xs">
+          <table class="w-full text-xs" id="tx-table">
             <thead>
               <tr class="text-left text-[10px] uppercase tracking-wider text-slate-400 bg-slate-50">
                 <th class="px-5 py-3 font-bold">OR No.</th>
                 <th class="px-5 py-3 font-bold">Payer</th>
                 <th class="px-5 py-3 font-bold">Source</th>
+                <th class="px-5 py-3 font-bold">Mode</th>
                 <th class="px-5 py-3 font-bold text-right">Amount</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-slate-100" id="tx-tbody">
               <?php foreach ($recent as $c): ?>
-              <tr class="hover:bg-brand-light/40 transition">
-                <td class="px-5 py-3 font-mono text-slate-500"><?= htmlspecialchars($c['or_number']) ?></td>
+              <tr class="tx-row hover:bg-brand-light/40 transition"
+                  data-or="<?= strtolower(htmlspecialchars($c['or_number'] ?? '')) ?>"
+                  data-payer="<?= strtolower(htmlspecialchars($c['payer_name'] ?? '')) ?>"
+                  data-source="<?= strtolower(htmlspecialchars($c['revenue_source'] ?? '')) ?>"
+                  data-mode="<?= strtolower(htmlspecialchars($c['payment_mode'] ?? 'cash')) ?>">
+                <td class="px-5 py-3 font-mono text-slate-500"><?= htmlspecialchars($c['or_number'] ?? '—') ?></td>
                 <td class="px-5 py-3 font-semibold text-slate-700 cursor-pointer hover:bg-brand-light/30 rounded"
                     onclick="showReceiptDetails(<?= htmlspecialchars(json_encode($c)) ?>)">
-                  <?= htmlspecialchars($c['payer_name']) ?>
+                  <?= htmlspecialchars($c['payer_name'] ?? '—') ?>
                 </td>
-                <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars($c['revenue_source']) ?></td>
+                <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars($c['revenue_source'] ?? '—') ?></td>
+                <td class="px-5 py-3">
+                  <span class="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                    <?= htmlspecialchars(ucfirst(strtolower($c['payment_mode'] ?? 'Cash'))) ?>
+                  </span>
+                </td>
                 <td class="px-5 py-3 text-right font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($c['amount']) ?></td>
               </tr>
               <?php endforeach; ?>
+
               <?php if (empty($recent)): ?>
-              <tr><td colspan="4" class="px-5 py-10 text-center text-slate-400">No collections recorded yet.</td></tr>
+              <tr id="tx-empty-data">
+                <td colspan="5" class="px-5 py-14 text-center">
+                  <div class="flex flex-col items-center gap-3">
+                    <div class="h-14 w-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+                      <i class="fa-solid fa-receipt text-2xl text-slate-300"></i>
+                    </div>
+                    <p class="text-xs font-bold text-slate-400">No collections recorded yet</p>
+                    <p class="text-[11px] text-slate-400">Start by recording your first official receipt.</p>
+                    <a href="collection.php" class="inline-flex items-center gap-2 mt-1 bg-brand-dark hover:opacity-90 text-white text-xs font-bold px-4 py-2 rounded-lg transition">
+                      <i class="fa-solid fa-plus"></i> Record First Collection
+                    </a>
+                  </div>
+                </td>
+              </tr>
               <?php endif; ?>
+
+              <!-- No-search-results row (hidden until needed) -->
+              <tr id="tx-no-results" class="hidden">
+                <td colspan="5" class="px-5 py-12 text-center">
+                  <div class="flex flex-col items-center gap-3">
+                    <div class="h-14 w-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+                      <i class="fa-solid fa-filter-circle-xmark text-2xl text-slate-300"></i>
+                    </div>
+                    <p class="text-xs font-bold text-slate-400">No matching transactions</p>
+                    <p class="text-[11px] text-slate-400">Try different keywords or clear the filters.</p>
+                    <button onclick="clearTxFilters()" class="inline-flex items-center gap-2 mt-1 bg-white border border-slate-200 text-slate-600 text-xs font-bold px-4 py-2 rounded-lg transition hover:bg-slate-50">
+                      <i class="fa-solid fa-xmark"></i> Clear Filters
+                    </button>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
       </div>
+
+      <script>
+      function filterTransactions() {
+        const q    = document.getElementById('tx-search').value.trim().toLowerCase();
+        const mode = document.getElementById('tx-mode-filter').value.toLowerCase();
+        const rows = document.querySelectorAll('#tx-tbody .tx-row');
+        const noResults = document.getElementById('tx-no-results');
+        const clearBtn  = document.getElementById('tx-clear-btn');
+        const badge     = document.getElementById('tx-count-badge');
+
+        let visible = 0;
+        rows.forEach(row => {
+          const matchText = !q
+            || row.dataset.or.includes(q)
+            || row.dataset.payer.includes(q)
+            || row.dataset.source.includes(q);
+          const matchMode = !mode || row.dataset.mode.includes(mode);
+          const show = matchText && matchMode;
+          row.classList.toggle('hidden', !show);
+          if (show) visible++;
+        });
+
+        noResults.classList.toggle('hidden', visible > 0);
+        clearBtn.classList.toggle('hidden', !q && !mode);
+        badge.textContent = visible + ' record' + (visible !== 1 ? 's' : '');
+        badge.className = 'inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-full '
+          + (visible === 0 ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-600');
+      }
+
+      function clearTxFilters() {
+        document.getElementById('tx-search').value = '';
+        document.getElementById('tx-mode-filter').value = '';
+        filterTransactions();
+      }
+      </script>
+
 
       <!-- Transaction History -->
       <?php 
@@ -308,6 +578,204 @@ include __DIR__ . '/../../includes/sidebar.php';
       include __DIR__ . '/../../includes/transaction_history.php';
       ?>
     </main>
+
+    <!-- ═══════ CHART.JS ═══════ -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script>
+    (function () {
+      // ── Shared helpers ────────────────────────────────────────────
+      const peso = (v) =>
+        '\u20B1' + parseFloat(v).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+      Chart.defaults.font.family = "'Inter', 'ui-sans-serif', system-ui, sans-serif";
+      Chart.defaults.color = '#94a3b8';   // slate-400
+
+      // ── 1. 12-MONTH TREND BAR CHART ──────────────────────────────
+      const trendLabels = <?= json_encode($trendLabels) ?>;
+      const trendTotals = <?= json_encode($trendTotals) ?>;
+
+      const trendCtx = document.getElementById('trendChart');
+      if (trendCtx) {
+        // Gradient fill for bars
+        const barGrad = trendCtx.getContext('2d').createLinearGradient(0, 0, 0, 240);
+        barGrad.addColorStop(0, 'rgba(23, 107, 135, 0.90)');   // brand-dark
+        barGrad.addColorStop(1, 'rgba(134, 182, 246, 0.55)');  // brand-medium
+
+        new Chart(trendCtx, {
+          type: 'bar',
+          data: {
+            labels: trendLabels,
+            datasets: [{
+              label: 'Collections',
+              data: trendTotals,
+              backgroundColor: barGrad,
+              borderColor: 'rgba(23, 107, 135, 0.9)',
+              borderWidth: 0,
+              borderRadius: 6,
+              borderSkipped: false,
+              hoverBackgroundColor: 'rgba(23, 107, 135, 1)',
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15,23,42,0.92)',
+                titleColor: '#e2e8f0',
+                bodyColor: '#94a3b8',
+                padding: 12,
+                cornerRadius: 10,
+                callbacks: {
+                  label: (ctx) => '  ' + peso(ctx.parsed.y)
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                border: { display: false },
+                ticks: { font: { size: 10, weight: '600' } }
+              },
+              y: {
+                grid: { color: 'rgba(148,163,184,0.12)', drawBorder: false },
+                border: { display: false, dash: [4, 4] },
+                ticks: {
+                  font: { size: 10 },
+                  callback: (v) => peso(v)
+                }
+              }
+            },
+            animation: {
+              duration: 900,
+              easing: 'easeOutQuart'
+            }
+          }
+        });
+      }
+
+      // ── 2. REVENUE SOURCE DONUT CHART ────────────────────────────
+      const donutData  = <?= json_encode(array_values($revenueSources)) ?>;
+      const donutLabels = <?= json_encode(array_keys($revenueSources)) ?>;
+
+      const palette = [
+        '#176B87', '#86B6F6', '#0ea5e9', '#38bdf8',
+        '#7dd3fc', '#2563eb', '#64748b', '#94a3b8'
+      ];
+
+      const donutCtx = document.getElementById('donutChart');
+      if (donutCtx && donutData.length) {
+        new Chart(donutCtx, {
+          type: 'doughnut',
+          data: {
+            labels: donutLabels,
+            datasets: [{
+              data: donutData,
+              backgroundColor: palette.slice(0, donutData.length),
+              borderColor: '#ffffff',
+              borderWidth: 3,
+              hoverOffset: 8,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '70%',
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15,23,42,0.92)',
+                titleColor: '#e2e8f0',
+                bodyColor: '#94a3b8',
+                padding: 12,
+                cornerRadius: 10,
+                callbacks: {
+                  label: (ctx) => '  ' + peso(ctx.parsed)
+                }
+              }
+            },
+            animation: { animateRotate: true, duration: 900, easing: 'easeOutQuart' }
+          }
+        });
+
+        // Build custom legend
+        const legend = document.getElementById('donutLegend');
+        const total  = donutData.reduce((s, v) => s + v, 0);
+        if (legend) {
+          legend.innerHTML = donutLabels.map((lbl, i) => {
+            const pct = total > 0 ? ((donutData[i] / total) * 100).toFixed(1) : 0;
+            return `
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:${palette[i] || '#94a3b8'}"></span>
+                  <span class="text-[11px] text-slate-600 font-medium truncate" title="${lbl}">${lbl}</span>
+                </div>
+                <span class="text-[11px] font-mono font-bold text-slate-700 shrink-0">${pct}%</span>
+              </div>`;
+          }).join('');
+        }
+      }
+
+      // ── 3. FUND BALANCES HORIZONTAL BAR CHART ────────────────────
+      const fundLabels  = <?= json_encode(array_column($funds, 'code')) ?>;
+      const fundTotals  = <?= json_encode(array_map('floatval', array_column($funds, 'balance'))) ?>;
+
+      const fundCtx = document.getElementById('fundChart');
+      if (fundCtx && fundLabels.length) {
+        const hGrad = fundCtx.getContext('2d').createLinearGradient(0, 0, 400, 0);
+        hGrad.addColorStop(0, 'rgba(134, 182, 246, 0.75)');
+        hGrad.addColorStop(1, 'rgba(23, 107, 135, 0.95)');
+
+        new Chart(fundCtx, {
+          type: 'bar',
+          data: {
+            labels: fundLabels,
+            datasets: [{
+              label: 'Balance',
+              data: fundTotals,
+              backgroundColor: hGrad,
+              borderColor: 'rgba(23, 107, 135, 0.9)',
+              borderWidth: 0,
+              borderRadius: 6,
+              borderSkipped: false,
+            }]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15,23,42,0.92)',
+                titleColor: '#e2e8f0',
+                bodyColor: '#94a3b8',
+                padding: 12,
+                cornerRadius: 10,
+                callbacks: {
+                  label: (ctx) => '  ' + peso(ctx.parsed.x)
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { color: 'rgba(148,163,184,0.12)' },
+                border: { display: false },
+                ticks: { font: { size: 10 }, callback: (v) => peso(v) }
+              },
+              y: {
+                grid: { display: false },
+                border: { display: false },
+                ticks: { font: { size: 11, weight: '700' } }
+              }
+            },
+            animation: { duration: 900, easing: 'easeOutQuart' }
+          }
+        });
+      }
+    })();
+    </script>
 
     <!-- Receipt Details Modal -->
     <div id="receiptModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
@@ -329,32 +797,68 @@ include __DIR__ . '/../../includes/sidebar.php';
 
     <!-- Edit Receipt Modal -->
     <div id="editReceiptModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-      <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-bold text-slate-900">Edit Receipt</h3>
-          <button onclick="hideEditModal()" class="text-slate-400 hover:text-slate-600">
+      <div class="bg-white rounded-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-5">
+          <div>
+            <h3 class="text-base font-black text-slate-900">Edit Receipt</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">Changes are recorded in the audit log.</p>
+          </div>
+          <button onclick="hideEditModal()" class="text-slate-400 hover:text-slate-600 h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition">
             <i class="fa-solid fa-times"></i>
           </button>
         </div>
         <form id="editReceiptForm" class="space-y-4">
           <input type="hidden" id="editReceiptId">
-          <div class="space-y-1.5">
-            <label class="text-xs font-semibold text-gray-500">Payer Name</label>
-            <input type="text" id="editPayerName" required class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1.5 col-span-2">
+              <label class="text-xs font-semibold text-gray-500">Payer Name</label>
+              <input type="text" id="editPayerName" required
+                class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+            </div>
+            <div class="space-y-1.5 col-span-2">
+              <label class="text-xs font-semibold text-gray-500">Revenue Source</label>
+              <select id="editRevenueSource" class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+                <option value="Real Property Tax">Real Property Tax</option>
+                <option value="Business Permit &amp; License">Business Permit &amp; License</option>
+                <option value="Market &amp; Slaughterhouse Fees">Market &amp; Slaughterhouse Fees</option>
+                <option value="Community Tax Certificate">Community Tax Certificate</option>
+                <option value="Miscellaneous Fees">Miscellaneous Fees</option>
+              </select>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-500">Fund</label>
+              <select id="editFundId" class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+                <?php
+                $fundLabels2 = ['BSF'=>'Business Service Fund','EDU'=>'Education Fund','GF'=>'General Fund','HLTH'=>'Health Fund','INFRA'=>'Infrastructure Fund','MSF'=>'Market Stall Fund','PTF'=>'Property Tax Fund','RDF'=>'Risk Disaster Fund'];
+                foreach ($funds as $f):
+                  $code2 = strtoupper((string)($f['code'] ?? ''));
+                ?>
+                <option value="<?= htmlspecialchars($f['id']) ?>"><?= htmlspecialchars($fundLabels2[$code2] ?? $code2) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-500">Amount (₱)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold">₱</span>
+                <input type="number" id="editAmount" min="0" step="0.01" required
+                  class="w-full pl-8 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition font-mono">
+              </div>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-500">Payment Mode</label>
+              <select id="editPaymentMode" class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+                <option value="cash">Cash</option>
+                <option value="online">Online / E-wallet</option>
+              </select>
+            </div>
+            <div class="space-y-1.5 col-span-2">
+              <label class="text-xs font-semibold text-gray-500">Audit Note <span class="text-slate-300 font-normal">(reason for edit)</span></label>
+              <textarea id="editAuditNote" rows="2" placeholder="e.g. Corrected payer name spelling / wrong fund assigned…"
+                class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition resize-none"></textarea>
+            </div>
           </div>
-          <div class="space-y-1.5">
-            <label class="text-xs font-semibold text-gray-500">Amount (₱)</label>
-            <input type="number" id="editAmount" min="0" step="0.01" required class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
-          </div>
-          <div class="space-y-1.5">
-            <label class="text-xs font-semibold text-gray-500">Payment Mode</label>
-            <select id="editPaymentMode" class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
-              <option value="cash">Cash</option>
-              <option value="check">Check</option>
-              <option value="online">Online / E-wallet</option>
-            </select>
-          </div>
-          <div class="flex gap-2">
+          <div class="flex gap-2 pt-1">
             <button type="button" onclick="hideEditModal()" class="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-sm transition">Cancel</button>
             <button type="submit" class="flex-1 py-2.5 px-4 bg-brand-medium hover:opacity-90 text-white font-bold rounded-lg text-sm transition">Save Changes</button>
           </div>
@@ -449,6 +953,15 @@ include __DIR__ . '/../../includes/sidebar.php';
       document.getElementById('editPayerName').value = currentReceipt.payer_name;
       document.getElementById('editAmount').value = currentReceipt.amount;
       document.getElementById('editPaymentMode').value = currentReceipt.payment_mode || 'cash';
+      // Revenue source
+      const srcSel = document.getElementById('editRevenueSource');
+      if (srcSel) { srcSel.value = currentReceipt.revenue_source || ''; }
+      // Fund
+      const fundSel = document.getElementById('editFundId');
+      if (fundSel && currentReceipt.fund_id) { fundSel.value = currentReceipt.fund_id; }
+      // Clear audit note
+      const note = document.getElementById('editAuditNote');
+      if (note) note.value = '';
       editModal.classList.remove('hidden');
     }
 
@@ -491,19 +1004,28 @@ include __DIR__ . '/../../includes/sidebar.php';
     // Handle edit form submission
     document.getElementById('editReceiptForm').addEventListener('submit', function(e) {
       e.preventDefault();
-      const id = document.getElementById('editReceiptId').value;
-      const payerName = document.getElementById('editPayerName').value;
-      const amount = document.getElementById('editAmount').value;
+      const id          = document.getElementById('editReceiptId').value;
+      const payerName   = document.getElementById('editPayerName').value;
+      const amount      = document.getElementById('editAmount').value;
       const paymentMode = document.getElementById('editPaymentMode').value;
-      
+      const revSrc      = document.getElementById('editRevenueSource')?.value || '';
+      const fundId      = document.getElementById('editFundId')?.value || '';
+      const auditNote   = document.getElementById('editAuditNote')?.value || '';
+
+      let body = 'id=' + id
+        + '&payer_name='      + encodeURIComponent(payerName)
+        + '&amount='          + amount
+        + '&payment_mode='    + encodeURIComponent(paymentMode)
+        + '&revenue_source='  + encodeURIComponent(revSrc)
+        + '&fund_id='         + encodeURIComponent(fundId)
+        + '&audit_note='      + encodeURIComponent(auditNote);
+
       fetch('edit_collection.php', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: 'id=' + id + '&payer_name=' + encodeURIComponent(payerName) + '&amount=' + amount + '&payment_mode=' + paymentMode
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body
       })
-      .then(response => response.json())
+      .then(r => r.json())
       .then(data => {
         if (data.success) {
           hideEditModal();
@@ -512,9 +1034,7 @@ include __DIR__ . '/../../includes/sidebar.php';
           alert('Error: ' + data.error);
         }
       })
-      .catch(error => {
-        alert('Error: ' + error);
-      });
+      .catch(err => alert('Error: ' + err));
     });
 
     // Close modals on outside click

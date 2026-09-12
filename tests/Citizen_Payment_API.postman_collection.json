@@ -1,0 +1,336 @@
+{
+  "info": {
+    "name": "Citizen Treasury Payment API",
+    "description": "Complete test collection for online treasury payments from citizens/mobile apps",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Successful Payment Processing",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Maria Santos\",\n  \"account_number\": \"T-20485\",\n  \"email\": \"maria.santos@example.com\",\n  \"payment_type\": \"Business Tax & Fees\",\n  \"amount\": 4200,\n  \"service_fee\": 42,\n  \"total_amount\": 4242,\n  \"payment_method\": \"GCash\",\n  \"notes\": \"Business tax payment\",\n  \"source\": \"civentral-apps\",\n  \"municipality_code\": \"CAL-2026\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\",\n  \"citizen_user_id\": 123\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Missing Required Field - account_number",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"payment_type\": \"Business Tax & Fees\",\n  \"amount\": 5000,\n  \"payment_method\": \"GCash\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Validation - Negative Amount",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Jane Doe\",\n  \"account_number\": \"T-12345\",\n  \"email\": \"jane@example.com\",\n  \"payment_type\": \"Real Property Tax\",\n  \"amount\": -1000,\n  \"payment_method\": \"Maya\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Validation - Invalid Email",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Test User\",\n  \"account_number\": \"T-99999\",\n  \"email\": \"invalid-email\",\n  \"payment_type\": \"Market Stall Rental\",\n  \"amount\": 2000,\n  \"payment_method\": \"GCash\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. Validation - Invalid Payment Type",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Test User\",\n  \"account_number\": \"T-99999\",\n  \"email\": \"test@example.com\",\n  \"payment_type\": \"Invalid Payment Type\",\n  \"amount\": 2000,\n  \"payment_method\": \"GCash\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6a. Idempotency Test - First Submission",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Alice Smith\",\n  \"account_number\": \"T-IDEM-001\",\n  \"email\": \"alice@example.com\",\n  \"payment_type\": \"Community Tax Certificate\",\n  \"amount\": 500,\n  \"payment_method\": \"Maya\",\n  \"notes\": \"First submission\",\n  \"source\": \"civentral-apps\",\n  \"municipality_code\": \"CAL-2026\",\n  \"idempotency_key\": \"idem-test-{{$timestamp}}\",\n  \"citizen_user_id\": 123\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6b. Idempotency Test - Duplicate Submission",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Alice Smith\",\n  \"account_number\": \"T-IDEM-001\",\n  \"email\": \"alice@example.com\",\n  \"payment_type\": \"Community Tax Certificate\",\n  \"amount\": 500,\n  \"payment_method\": \"Maya\",\n  \"notes\": \"Second submission (duplicate)\",\n  \"source\": \"civentral-apps\",\n  \"municipality_code\": \"CAL-2026\",\n  \"idempotency_key\": \"idem-test-{{$timestamp}}\",\n  \"citizen_user_id\": 123\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "7. Server-Side Amount Recalculation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Bob Johnson\",\n  \"account_number\": \"T-CALC-001\",\n  \"email\": \"bob@example.com\",\n  \"payment_type\": \"Business Tax & Fees\",\n  \"amount\": 4200,\n  \"service_fee\": 999,\n  \"total_amount\": 9999,\n  \"payment_method\": \"GCash\",\n  \"notes\": \"Testing amount recalculation. Server should recalculate to service_fee=42, total_amount=4242\",\n  \"source\": \"civentral-apps\",\n  \"municipality_code\": \"CAL-2026\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\",\n  \"citizen_user_id\": 123\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "8. GET - Payment History",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments?limit=10&offset=0",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "offset",
+              "value": "0"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "9. GET - Single Payment Details",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments?transaction_id=TXN-2026-ABCDEF",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"],
+          "query": [
+            {
+              "key": "transaction_id",
+              "value": "TXN-2026-ABCDEF"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. GET - Payment History with Pagination",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments?limit=5&offset=5",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "5"
+            },
+            {
+              "key": "offset",
+              "value": "5"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. GET - Unauthorized (No Session)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "All Payment Types - Real Property Tax",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Property Owner\",\n  \"account_number\": \"P-12345\",\n  \"email\": \"owner@example.com\",\n  \"payment_type\": \"Real Property Tax\",\n  \"amount\": 15000,\n  \"payment_method\": \"GCash\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\",\n  \"citizen_user_id\": 123\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "All Payment Types - Market Stall Rental",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"Market Vendor\",\n  \"account_number\": \"M-54321\",\n  \"email\": \"vendor@example.com\",\n  \"payment_type\": \"Market Stall Rental\",\n  \"amount\": 1500,\n  \"payment_method\": \"Maya\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\",\n  \"citizen_user_id\": 123\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "All Payment Types - Miscellaneous Fees",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taxpayer_name\": \"General Citizen\",\n  \"account_number\": \"G-99999\",\n  \"email\": \"citizen@example.com\",\n  \"payment_type\": \"General government payment / miscellaneous fees\",\n  \"amount\": 750,\n  \"payment_method\": \"GCash\",\n  \"idempotency_key\": \"{{$timestamp}}-{{$randomInt}}\",\n  \"citizen_user_id\": 123\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/citizen/treasury/payments",
+          "host": ["{{base_url}}"],
+          "path": ["api", "citizen", "treasury", "payments"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost/civentral",
+      "type": "string"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 // Auth check
 if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../../login.php');
     exit;
 }
 
@@ -48,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'business',
                     'action' => 'create',
                     'table_name' => 'tr_business_apps',
                     'record_id' => $app['id'] ?? null,
@@ -76,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'business',
                     'action' => 'update',
                     'table_name' => 'tr_business_apps',
                     'record_id' => $app['id'],
@@ -105,6 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'business',
                     'action' => 'update',
                     'table_name' => 'tr_business_apps',
                     'record_id' => $app['id'],
@@ -311,9 +314,9 @@ include __DIR__ . '/../../includes/sidebar.php';
       </div>
 
       <?php if ($reviewApp): ?>
-      <div id="applicationReviewModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-slate-200">
-          <div class="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-start justify-between gap-4 z-10">
+      <div id="applicationReviewModal" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 pt-6 sm:p-6 sm:pt-10 bg-slate-900/60 backdrop-blur-xs">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-5rem)] flex flex-col overflow-hidden border border-slate-200">
+          <div class="shrink-0 bg-white border-b border-slate-100 px-5 py-4 sm:px-6 flex items-start justify-between gap-4">
             <div>
               <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application Review</p>
               <h3 class="text-lg font-black text-slate-900 mt-1"><?= htmlspecialchars($reviewApp['application_no']) ?></h3>
@@ -327,7 +330,7 @@ include __DIR__ . '/../../includes/sidebar.php';
             </a>
           </div>
 
-          <div class="p-6 space-y-6">
+          <div class="min-h-0 overflow-y-auto p-5 sm:p-6 space-y-6">
             <!-- Edit application details -->
             <section class="space-y-3">
               <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-500">Application Details</h4>

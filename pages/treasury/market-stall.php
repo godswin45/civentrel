@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $auditService->logTransaction([
                 'user_id' => $_SESSION['user_id'] ?? null,
                 'username' => $headerUser['full_name'] ?? 'System',
+                'module' => 'market_stall',
                 'action' => 'collect',
                 'table_name' => 'tr_collections',
                 'record_id' => $lastReceipt['id'] ?? null,
@@ -51,8 +52,10 @@ if (isset($_GET['issued']) && !empty($_SESSION['flash_receipt'])) {
     unset($_SESSION['flash_receipt']);
 }
 
+$allCollections = [];
 try {
     $funds = $treasuryService->getFunds();
+    $allCollections = $treasuryService->getAllCollections();
     $auditService = $auditService ?? null;
 } catch (Exception $e) {
     $errorMsg = $errorMsg ?? $e->getMessage();
@@ -94,10 +97,20 @@ include __DIR__ . '/../../includes/sidebar.php';
           <input type="hidden" name="action" value="record_rental">
           <h2 class="text-sm font-extrabold text-slate-800 pb-1">Stall Rental Payment</h2>
 
+          <?php
+            $stallNames = array_unique(array_filter(array_column($allCollections, 'payer_name')));
+            sort($stallNames);
+          ?>
           <div class="space-y-1.5">
             <label class="text-xs font-semibold text-gray-500">Stall Holder Name</label>
             <input type="text" name="stall_holder" required placeholder="e.g. Dela Cruz, Marites"
+              list="stall-names-list" autocomplete="off"
               class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+            <datalist id="stall-names-list">
+              <?php foreach ($stallNames as $sn): ?>
+              <option value="<?= htmlspecialchars($sn) ?>">
+              <?php endforeach; ?>
+            </datalist>
           </div>
 
           <div class="space-y-1.5">
@@ -137,7 +150,6 @@ include __DIR__ . '/../../includes/sidebar.php';
               <label class="text-xs font-semibold text-gray-500">Mode</label>
               <select name="payment_mode" class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
                 <option value="cash">Cash</option>
-                <option value="check">Check</option>
                 <option value="online">Online / E-wallet</option>
               </select>
             </div>

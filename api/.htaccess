@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# Explicit routing for the payments endpoint based on HTTP method
+RewriteCond %{REQUEST_METHOD} POST
+RewriteRule ^citizen/treasury/payments/?$ citizen/treasury/payments.php [L]
+
+RewriteCond %{REQUEST_METHOD} GET
+RewriteRule ^citizen/treasury/payments/?$ citizen/treasury/payments_get.php [L]
+
+# Handle general extensionless PHP files
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}\.php -f
+RewriteRule ^(.*)$ $1.php [L]

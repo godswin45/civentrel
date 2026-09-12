@@ -10,6 +10,35 @@ class TreasuryRepository {
     }
 
     /**
+     * Return the actual columns for a table so invalid keys are not inserted/updated.
+     */
+    private function getTableColumns(string $table): array {
+        if (!$this->db || !method_exists($this->db, 'getPdo')) {
+            return [];
+        }
+
+        try {
+            $pdo = $this->db->getPdo();
+            $columns = $pdo->query('SHOW COLUMNS FROM `'.$table.'`')->fetchAll();
+            return array_map(fn($column) => $column['Field'], $columns);
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Filter payload to only supported table fields.
+     */
+    private function filterTableColumns(string $table, array $data): array {
+        $columns = $this->getTableColumns($table);
+        if (empty($columns)) {
+            return $data;
+        }
+
+        return array_filter($data, fn($key) => in_array($key, $columns, true), ARRAY_FILTER_USE_KEY);
+    }
+
+    /**
      * Get all funds
      */
     public function getAllFunds(): array {
@@ -76,14 +105,19 @@ class TreasuryRepository {
      * Insert collection
      */
     public function insertCollection(array $data): int {
-        return $this->db->insert('tr_collections', $data);
+        $filtered = $this->filterTableColumns('tr_collections', $data);
+        return $this->db->insert('tr_collections', $filtered);
     }
 
     /**
      * Update collection
      */
     public function updateCollection(int $id, array $data): bool {
-        return $this->db->update('tr_collections', $data, ['id' => $id]) > 0;
+        $filtered = $this->filterTableColumns('tr_collections', $data);
+        if (empty($filtered)) {
+            return false;
+        }
+        return $this->db->update('tr_collections', $filtered, ['id' => $id]) > 0;
     }
 
     /**
@@ -113,18 +147,21 @@ class TreasuryRepository {
      * Insert voucher
      */
     public function insertVoucher(array $data): int {
-        return $this->db->insert('tr_disbursements', $data);
+        $filtered = $this->filterTableColumns('tr_disbursements', $data);
+        return $this->db->insert('tr_disbursements', $filtered);
     }
 
     /**
      * Update voucher status
      */
     public function updateVoucherStatus(int $id, string $status): bool {
-        $data = ['status' => strtolower($status)];
-        if (strtolower($status) === 'disbursed') {
+        $normalizedStatus = strtolower(trim($status));
+        $data = ['status' => $normalizedStatus];
+        if ($normalizedStatus === 'disbursed') {
             $data['disbursement_date'] = date('Y-m-d');
         }
-        return $this->db->update('tr_disbursements', $data, ['id' => $id]) > 0;
+        $filtered = $this->filterTableColumns('tr_disbursements', $data);
+        return $this->db->update('tr_disbursements', $filtered, ['id' => $id]) > 0;
     }
 
     /**
@@ -167,21 +204,27 @@ class TreasuryRepository {
      * Insert business application
      */
     public function insertBusinessApp(array $data): int {
-        return $this->db->insert('tr_business_apps', $data);
+        $filtered = $this->filterTableColumns('tr_business_apps', $data);
+        return $this->db->insert('tr_business_apps', $filtered);
     }
 
     /**
      * Update business application
      */
     public function updateBusinessApp(int $id, array $data): bool {
-        return $this->db->update('tr_business_apps', $data, ['id' => $id]) > 0;
+        $filtered = $this->filterTableColumns('tr_business_apps', $data);
+        if (empty($filtered)) {
+            return false;
+        }
+        return $this->db->update('tr_business_apps', $filtered, ['id' => $id]) > 0;
     }
 
     /**
      * Create online payment
      */
     public function createOnlinePayment(array $data): int {
-        return $this->db->insert('tr_online_payments', $data);
+        $filtered = $this->filterTableColumns('tr_online_payments', $data);
+        return $this->db->insert('tr_online_payments', $filtered);
     }
 
     /**
@@ -204,11 +247,12 @@ class TreasuryRepository {
      * Update online payment status
      */
     public function updateOnlinePaymentStatus(int $id, string $status, array $data = []): bool {
-        $updateData = ['status' => $status];
+        $updateData = ['status' => strtolower(trim($status))];
         if (!empty($data)) {
             $updateData = array_merge($updateData, $data);
         }
-        return $this->db->update('tr_online_payments', $updateData, ['id' => $id]) > 0;
+        $filtered = $this->filterTableColumns('tr_online_payments', $updateData);
+        return $this->db->update('tr_online_payments', $filtered, ['id' => $id]) > 0;
     }
 
     /**
@@ -229,7 +273,8 @@ class TreasuryRepository {
      * Create budget request
      */
     public function createBudgetRequest(array $data): int {
-        return $this->db->insert('tr_budget_requests', $data);
+        $filtered = $this->filterTableColumns('tr_budget_requests', $data);
+        return $this->db->insert('tr_budget_requests', $filtered);
     }
 
     /**
@@ -276,7 +321,8 @@ class TreasuryRepository {
         if (!empty($data)) {
             $updateData = array_merge($updateData, $data);
         }
-        return $this->db->update('tr_budget_requests', $updateData, ['id' => $id]) > 0;
+        $filtered = $this->filterTableColumns('tr_budget_requests', $updateData);
+        return $this->db->update('tr_budget_requests', $filtered, ['id' => $id]) > 0;
     }
 
 }

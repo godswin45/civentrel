@@ -17,9 +17,12 @@ class AuditService {
      * Log a transaction to the audit log
      */
     public function logTransaction(array $data): bool {
+        $module = $data['module'] ?? $this->resolveModuleFromTable($data['table_name'] ?? '');
+
         $logData = [
             'user_id' => $data['user_id'] ?? null,
             'username' => $data['username'] ?? 'System',
+            'module' => $module,
             'action' => $data['action'],
             'table_name' => $data['table_name'] ?? '',
             'record_id' => $data['record_id'] ?? null,
@@ -30,20 +33,51 @@ class AuditService {
         
         return $this->db->insert('tr_audit_log', $logData) > 0;
     }
+
+    /**
+     * Resolve audit module from table name for feature filtering.
+     */
+    private function resolveModuleFromTable(string $tableName): string {
+        $table = strtolower(trim($tableName));
+
+        $map = [
+            'tr_collections' => 'collection',
+            'tr_disbursements' => 'disbursement',
+            'tr_budget_requests' => 'budget',
+            'tr_business_apps' => 'business',
+            'tr_online_payments' => 'online_payment',
+            'tr_market_stalls' => 'market_stall',
+            'tr_tax_assessments' => 'tax_assessment',
+        ];
+
+        return $map[$table] ?? 'treasury';
+    }
     
     /**
      * Get recent transactions for a specific module
      */
     public function getRecentTransactions(string $module, int $limit = 10): array {
         $pdo = $this->db->getPdo();
-        
+
+        if ($module === 'treasury' || $module === 'all') {
+            $query = "SELECT * FROM tr_audit_log ORDER BY created_at DESC LIMIT :limit";
+            $stmt = $pdo->prepare($query);
+            $stmt->bindValue(':limit', (int) $limit, \PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll();
+        }
+
         $query = "SELECT * FROM tr_audit_log 
-                   WHERE table_name LIKE :module 
+                   WHERE module = :module 
+                   OR (module IS NULL AND table_name LIKE :module_pattern)
                    ORDER BY created_at DESC 
                    LIMIT :limit";
-        
+
         $stmt = $pdo->prepare($query);
-        $stmt->execute(['module' => "%$module%", 'limit' => $limit]);
+        $stmt->bindValue(':module', strtolower(trim($module)), \PDO::PARAM_STR);
+        $stmt->bindValue(':module_pattern', "%" . strtolower(trim($module)) . "%", \PDO::PARAM_STR);
+        $stmt->bindValue(':limit', (int) $limit, \PDO::PARAM_INT);
+        $stmt->execute();
         
         return $stmt->fetchAll();
     }

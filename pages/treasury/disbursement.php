@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 // Auth check
 if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../../login.php');
     exit;
 }
 
@@ -17,9 +17,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (($_POST['action'] ?? '') === 'create_voucher') {
             $amount = (float) ($_POST['amount'] ?? 0);
             if ($amount <= 0) throw new Exception('Amount must be greater than zero.');
+          $purposeDocument = $treasuryService->saveVoucherPurposeDocument($_FILES['purpose_document'] ?? []);
             $createdVoucher = $treasuryService->createVoucher([
                 'payee'      => trim($_POST['payee'] ?? ''),
                 'purpose'    => trim($_POST['purpose'] ?? ''),
+            'purpose_document' => $purposeDocument,
                 'fund_id'    => $_POST['fund_id'] ?? '',
                 'amount'     => $amount,
                 'created_by' => $headerUser['full_name'] ?? null,
@@ -30,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'disbursement',
                     'action' => 'create',
                     'table_name' => 'tr_disbursements',
                     'record_id' => $createdVoucher['id'] ?? null,
@@ -39,6 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $successMsg = 'Voucher submitted for release.';
         } elseif (($_POST['action'] ?? '') === 'release_voucher') {
+          if (!$treasuryService->verifyReleaseCode((string) ($_POST['release_code'] ?? ''))) {
+            throw new Exception('Invalid release confirmation code.');
+          }
             $treasuryService->releaseVoucher($_POST['voucher_id']);
             
             // Log the transaction
@@ -46,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $auditService->logTransaction([
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'username' => $headerUser['full_name'] ?? 'System',
+                    'module' => 'disbursement',
                     'action' => 'disburse',
                     'table_name' => 'tr_disbursements',
                     'record_id' => $_POST['voucher_id'],
@@ -108,6 +115,11 @@ include __DIR__ . '/../../includes/sidebar.php';
         <i class="fa-solid fa-circle-check mt-0.5"></i><span><?= htmlspecialchars($successMsg) ?></span>
       </div>
       <?php endif; ?>
+      <?php if (!empty($_GET['imported'])): ?>
+      <div class="bg-sky-50 border border-sky-200 text-sky-700 rounded-xl p-4 text-xs font-medium flex items-start space-x-2">
+        <i class="fa-solid fa-file-import mt-0.5"></i><span><?= htmlspecialchars($_GET['imported']) ?></span>
+      </div>
+      <?php endif; ?>
 
       <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div class="lg:col-span-2 bg-white border border-slate-200 rounded-xl shadow-xs p-5 space-y-5 h-fit">
@@ -126,7 +138,7 @@ include __DIR__ . '/../../includes/sidebar.php';
           <?php endif; ?>
         </div>
 
-        <form method="post" class="lg:col-span-3 bg-white border border-slate-200 rounded-xl shadow-xs p-5 space-y-4">
+        <form method="post" enctype="multipart/form-data" class="lg:col-span-3 bg-white border border-slate-200 rounded-xl shadow-xs p-5 space-y-4">
           <input type="hidden" name="action" value="create_voucher">
           <h2 class="text-sm font-extrabold text-slate-800 pb-1">New Disbursement Voucher</h2>
 
@@ -137,8 +149,15 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
           <div class="space-y-1.5">
             <label class="text-xs font-semibold text-gray-500">Purpose</label>
-            <input type="text" name="purpose" required placeholder="e.g. Barangay road repair, materials"
-              class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+            <textarea name="purpose" rows="3" placeholder="e.g. Barangay road repair, materials"
+              class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition"></textarea>
+            <p class="text-[11px] text-slate-400">Type the purpose, or attach a supporting purpose document below.</p>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold text-gray-500">Purpose document <span class="font-normal text-slate-400">(optional)</span></label>
+            <input type="file" name="purpose_document" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-xs text-slate-600 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+            <p class="text-[11px] text-slate-400">PDF, DOC, DOCX, JPG, or PNG up to 10 MB.</p>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="space-y-1.5">
@@ -162,6 +181,20 @@ include __DIR__ . '/../../includes/sidebar.php';
         </form>
       </div>
 
+      <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-5">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 class="text-sm font-extrabold text-slate-800">Import voucher data</h2>
+            <p class="text-[11px] text-slate-400 mt-1">CSV, Excel, or JSON, up to 1,000 rows. Required: payee, purpose, amount.</p>
+          </div>
+          <form method="post" action="import-financial-data.php" enctype="multipart/form-data" class="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="target" value="disbursement">
+            <input type="file" name="import_file" accept=".csv,.xlsx,.json" required class="max-w-xs text-xs text-slate-500">
+            <button type="submit" class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-2 rounded-lg text-xs transition"><i class="fa-solid fa-file-import"></i> Import</button>
+          </form>
+        </div>
+      </div>
+
       <div class="bg-white border border-slate-200 rounded-xl shadow-xs">
         <div class="p-5 border-b border-slate-100 flex items-center justify-between">
           <h2 class="text-sm font-extrabold text-slate-800">Disbursement Vouchers</h2>
@@ -183,21 +216,22 @@ include __DIR__ . '/../../includes/sidebar.php';
             <tbody class="divide-y divide-slate-100">
               <?php foreach ($vouchers as $v): ?>
               <tr class="hover:bg-brand-light/40 transition">
-                <td class="px-5 py-3 font-mono text-slate-500"><?= htmlspecialchars($v['dv_number'] ?? $v['reference_no'] ?? '') ?></td>
-                <td class="px-5 py-3 font-semibold text-slate-700"><?= htmlspecialchars($v['payee_name']) ?></td>
-                <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars($v['purpose']) ?></td>
-                <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars(strtoupper($v['fund_code'])) ?></td>
+                <td class="px-5 py-3 font-mono text-slate-500"><?= htmlspecialchars($v['dv_number'] ?? $v['voucher_no'] ?? '') ?></td>
+                <td class="px-5 py-3 font-semibold text-slate-700"><?= htmlspecialchars($v['payee'] ?? '') ?></td>
+                <td class="px-5 py-3 text-slate-500">
+                  <?= htmlspecialchars($v['purpose']) ?>
+                  <?php if (!empty($v['purpose_document'])): ?>
+                    <a href="<?= htmlspecialchars($v['purpose_document']) ?>" target="_blank" class="block text-[10px] text-brand-dark font-bold hover:underline mt-1"><i class="fa-solid fa-paperclip mr-1"></i>View attachment</a>
+                  <?php endif; ?>
+                </td>
+                <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars(strtoupper($v['fund_code'] ?? ($v['fund_id'] ?? ''))) ?></td>
                 <td class="px-5 py-3 text-right font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($v['amount']) ?></td>
                 <td class="px-5 py-3">
                   <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= strtolower($v['status'])==='pending' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600' ?>"><?= htmlspecialchars($v['status']) ?></span>
                 </td>
                 <td class="px-5 py-3 text-right">
                   <?php if (strtolower($v['status']) === 'pending'): ?>
-                  <form method="post" onsubmit="return confirm('Release ₱<?= number_format($v['amount'],2) ?> to <?= htmlspecialchars(addslashes($v['payee_name'])) ?>?');">
-                    <input type="hidden" name="action" value="release_voucher">
-                    <input type="hidden" name="voucher_id" value="<?= $v['id'] ?>">
-                    <button type="submit" class="text-[11px] font-bold text-brand-dark hover:underline">Release</button>
-                  </form>
+                  <button type="button" onclick="openReleaseModal(<?= (int) $v['id'] ?>, '<?= htmlspecialchars(addslashes((string) ($v['payee'] ?? ''))) ?>', '<?= number_format((float) $v['amount'], 2, '.', '') ?>')" class="text-[11px] font-bold text-brand-dark hover:underline">Release</button>
                   <?php else: ?>
                   <span class="text-[10px] text-slate-400"><?= $v['disbursement_date'] ? date('M j, Y', strtotime($v['disbursement_date'])) : '-' ?></span>
                   <?php endif; ?>
@@ -218,4 +252,50 @@ include __DIR__ . '/../../includes/sidebar.php';
       include __DIR__ . '/../../includes/transaction_history.php';
       ?>
     </main>
+
+    <div id="releaseModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Authorization required</p>
+            <h2 class="mt-1 text-lg font-black text-slate-900">Confirm voucher release</h2>
+          </div>
+          <button type="button" onclick="closeReleaseModal()" class="text-slate-400 hover:text-slate-700" title="Close">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <p class="mt-4 text-sm leading-relaxed text-slate-600">Enter the designated release code to release <strong id="releaseModalAmount"></strong> to <strong id="releaseModalPayee"></strong>.</p>
+        <form method="post" class="mt-5 space-y-4">
+          <input type="hidden" name="action" value="release_voucher">
+          <input type="hidden" name="voucher_id" id="releaseVoucherId">
+          <div>
+            <label for="releaseCode" class="mb-1.5 block text-xs font-bold text-slate-600">Confirmation code</label>
+            <input type="password" name="release_code" id="releaseCode" inputmode="numeric" autocomplete="off" required maxlength="32"
+              class="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm tracking-[0.2em] text-slate-900 focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/20">
+          </div>
+          <div class="flex justify-end gap-2">
+            <button type="button" onclick="closeReleaseModal()" class="rounded-lg bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200">Cancel</button>
+            <button type="submit" class="rounded-lg bg-brand-dark px-4 py-2.5 text-xs font-bold text-white hover:opacity-90">Confirm release</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+      function openReleaseModal(voucherId, payee, amount) {
+        document.getElementById('releaseVoucherId').value = voucherId;
+        document.getElementById('releaseModalPayee').textContent = payee;
+        document.getElementById('releaseModalAmount').textContent = '₱' + amount;
+        document.getElementById('releaseCode').value = '';
+        const modal = document.getElementById('releaseModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.getElementById('releaseCode').focus();
+      }
+
+      function closeReleaseModal() {
+        const modal = document.getElementById('releaseModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    </script>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

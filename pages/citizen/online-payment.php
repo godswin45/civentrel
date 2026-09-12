@@ -72,11 +72,6 @@ include __DIR__ . '/../includes/sidebar.php';
             Pay your taxes, fees, and bills online using GCash payment gateway.
           </p>
         </div>
-        <div class="flex gap-3">
-          <a href="business-permit.php" class="bg-brand-medium hover:opacity-90 text-white font-bold px-4 py-2.5 rounded-lg text-xs transition shadow-sm">
-            <i class="fa-solid fa-file-signature mr-2"></i>Business Permit Application
-          </a>
-        </div>
       </div>
 
       <?php if ($errorMsg): ?>

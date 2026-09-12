@@ -35,6 +35,13 @@ class TreasuryService {
     }
 
     /**
+     * Generate voucher number for tr_disbursements.voucher_no
+     */
+    public function generateVoucherNumber(): string {
+        return 'V-' . date('Y') . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+    }
+
+    /**
      * Generate Business Application number
      */
     public function generateBusinessAppNo(): string {
@@ -70,6 +77,36 @@ class TreasuryService {
     }
 
     /**
+     * Import disbursement vouchers from normalized rows.
+     */
+    public function importVouchers(array $rows, ?string $createdBy = null): array {
+        $result = ['imported' => 0, 'errors' => []];
+        foreach ($rows as $index => $row) {
+            $line = $index + 2;
+            try {
+                $payee = trim((string) ($row['payee'] ?? $row['payee_name'] ?? ''));
+                $purpose = trim((string) ($row['purpose'] ?? ''));
+                $amount = (float) ($row['amount'] ?? 0);
+                if ($payee === '' || $purpose === '' || $amount <= 0) {
+                    throw new \Exception('payee, purpose, and a positive amount are required');
+                }
+
+                $voucher = $this->createVoucher([
+                    'payee' => $payee,
+                    'purpose' => $purpose,
+                    'fund_id' => $row['fund_id'] ?? $row['fund_code'] ?? 'GF',
+                    'amount' => $amount,
+                    'created_by' => $createdBy,
+                ]);
+                $result['imported']++;
+            } catch (\Throwable $e) {
+                $result['errors'][] = 'Row ' . $line . ': ' . $e->getMessage();
+            }
+        }
+        return $result;
+    }
+
+    /**
      * Resolve a fund identifier (numeric id or code) to tr_funds.code for FK columns.
      */
     private function resolveFundCode($fundIdentifier, string $default = 'GF'): string {
@@ -102,6 +139,7 @@ class TreasuryService {
         if (empty($fund)) {
             throw new \Exception('Unknown fund.');
         }
+        $paymentMode = $this->normalizePaymentMode($input['payment_mode'] ?? 'cash');
 
         $rec = [
             'or_number'      => $this->generateORNumber(),
@@ -109,7 +147,7 @@ class TreasuryService {
             'revenue_source' => $input['revenue_source'],
             'fund_code'      => $fundCode,
             'amount'         => $input['amount'],
-            'payment_mode'   => $input['payment_mode'],
+            'payment_mode'   => $paymentMode,
             'collected_by'   => $input['collected_by'] ?? null,
         ];
 
@@ -129,6 +167,10 @@ class TreasuryService {
         $collection = $this->treasuryRepo->getCollectionById($id);
         if (!$collection) {
             throw new \Exception('Collection not found.');
+        }
+
+        if (array_key_exists('payment_mode', $data)) {
+            $data['payment_mode'] = $this->normalizePaymentMode($data['payment_mode']);
         }
 
         // Calculate the difference in amount
@@ -178,24 +220,85 @@ class TreasuryService {
     }
 
     /**
+     * Validate payment modes accepted for new or edited collections.
+     */
+    private function normalizePaymentMode($paymentMode): string {
+        $mode = strtolower(trim((string) ($paymentMode ?: 'cash')));
+        $allowedModes = ['cash', 'online', 'gcash', 'maya', 'bank_transfer'];
+        if (!in_array($mode, $allowedModes, true)) {
+            throw new \Exception('Unsupported payment mode.');
+        }
+        return $mode;
+    }
+
+    /**
      * Create a disbursement voucher
      */
     public function createVoucher(array $input): array {
         $fundCode = $this->resolveFundCode($input['fund_id'] ?? null);
 
+        $purpose = trim((string) ($input['purpose'] ?? ''));
+        $purposeDocument = $input['purpose_document'] ?? null;
+        if ($purpose === '' && empty($purposeDocument)) {
+            throw new \Exception('Enter a purpose or upload a purpose document.');
+        }
+
         $dv = [
             'dv_number'   => $this->generateDVNumber(),
-            'reference_no' => $this->generateDVNumber(),
-            'payee_name'  => $input['payee'],
-            'purpose'     => $input['purpose'],
+            'voucher_no'  => $this->generateVoucherNumber(),
+            'payee'       => $input['payee'],
+            'purpose'     => $purpose !== '' ? $purpose : 'See attached purpose document',
+            'purpose_document' => $purposeDocument,
+            'fund_id'     => $input['fund_id'] ?? 'GF',
             'fund_code'   => $fundCode,
             'amount'      => $input['amount'],
             'status'      => 'pending',
-            'prepared_by' => $input['created_by'] ?? null,
+            'created_by'  => $input['created_by'] ?? null,
         ];
 
         $voucherId = $this->treasuryRepo->insertVoucher($dv);
         return $this->treasuryRepo->getVoucherById($voucherId);
+    }
+
+    /**
+     * Store a supporting purpose document and return its relative public path.
+     */
+    public function saveVoucherPurposeDocument(array $file): ?string {
+        if (empty($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+        if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            throw new \Exception('The purpose document could not be uploaded.');
+        }
+        if (($file['size'] ?? 0) > 10 * 1024 * 1024) {
+            throw new \Exception('The purpose document must be 10 MB or smaller.');
+        }
+
+        $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+        $extension = strtolower((string) pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($extension, $allowedExtensions, true)) {
+            throw new \Exception('Purpose document must be PDF, DOC, DOCX, JPG, JPEG, or PNG.');
+        }
+
+        $directory = __DIR__ . '/../../pages/treasury/uploads/vouchers';
+        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+            throw new \Exception('Unable to prepare the purpose document storage folder.');
+        }
+
+        $filename = 'purpose_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . $extension;
+        if (!move_uploaded_file($file['tmp_name'], $directory . '/' . $filename)) {
+            throw new \Exception('Unable to save the purpose document.');
+        }
+
+        return 'uploads/vouchers/' . $filename;
+    }
+
+    /**
+     * Validate the designated code required before releasing funds.
+     */
+    public function verifyReleaseCode(string $releaseCode): bool {
+        $configuredCode = getenv('TREASURY_RELEASE_CODE') ?: (getenv('DISBURSEMENT_PASSWORD') ?: '12345678');
+        return hash_equals((string) $configuredCode, trim($releaseCode));
     }
 
     /**
@@ -229,7 +332,7 @@ class TreasuryService {
         $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
 
         // Update voucher status
-        $this->treasuryRepo->updateVoucherStatus($dvId, 'Released');
+        $this->treasuryRepo->updateVoucherStatus($dvId, 'disbursed');
 
         return $this->treasuryRepo->getVoucherById($dvId);
     }
@@ -327,14 +430,15 @@ class TreasuryService {
             'transaction_type' => $input['transaction_type'],
             'business_name'    => $input['business_name'],
             'owner_name'       => $input['owner_name'],
-            'barangay'         => $input['barangay'] ?? null,
-            'line_of_business' => $input['line_of_business'] ?? null,
-            'permit_no'        => $input['permit_no'] ?? null,
-            'fund_code'        => $fundCode,
-            'status'           => 'Submitted',
+            'business_address' => $input['barangay'] ?? null,
+            'application_type' => 'new',
+            'status'           => 'submitted',
             'documents'        => json_encode($documents),
-            'submitted_by'     => $input['submitted_by'] ?? null,
         ];
+
+        if (!empty($input['barangay'] ?? null)) {
+            $row['business_address'] = trim((string) $input['barangay']);
+        }
 
         $appId = $this->treasuryRepo->insertBusinessApp($row);
         return $this->treasuryRepo->getBusinessAppById($appId);
@@ -540,10 +644,52 @@ class TreasuryService {
     }
 
     /**
+     * Get one budget request for approvals and document generation.
+     */
+    public function getBudgetRequestById(int $requestId): ?array {
+        return $this->treasuryRepo->getBudgetRequestById($requestId);
+    }
+
+    /**
      * Get budget requests by department
      */
     public function getBudgetRequestsByDepartment(string $departmentCode): array {
         return $this->treasuryRepo->getBudgetRequestsByDepartment($departmentCode);
+    }
+
+    /**
+     * Import budget requests from normalized rows.
+     */
+    public function importBudgetRequests(array $rows, ?string $requestedBy = null): array {
+        $result = ['imported' => 0, 'errors' => []];
+        foreach ($rows as $index => $row) {
+            $line = $index + 2;
+            try {
+                $department = trim((string) ($row['department_name'] ?? $row['department'] ?? ''));
+                $project = trim((string) ($row['project_title'] ?? $row['project'] ?? ''));
+                $amount = (float) ($row['requested_amount'] ?? $row['amount'] ?? 0);
+                if ($department === '' || $project === '' || $amount <= 0) {
+                    throw new \Exception('department, project, and a positive amount are required');
+                }
+
+                $request = $this->createBudgetRequest([
+                    'department_name' => $department,
+                    'department_code' => trim((string) ($row['department_code'] ?? '')),
+                    'project_title' => $project,
+                    'description' => trim((string) ($row['description'] ?? $project)),
+                    'requested_amount' => $amount,
+                    'fund_id' => $row['fund_id'] ?? $row['fund_code'] ?? 'GF',
+                    'fiscal_year' => (int) ($row['fiscal_year'] ?? date('Y')),
+                    'quarter' => $row['quarter'] ?? 'Q1',
+                    'requested_by' => $requestedBy,
+                    'justification' => trim((string) ($row['justification'] ?? 'Imported request')),
+                ]);
+                $result['imported']++;
+            } catch (\Throwable $e) {
+                $result['errors'][] = 'Row ' . $line . ': ' . $e->getMessage();
+            }
+        }
+        return $result;
     }
 
     /**

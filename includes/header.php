@@ -154,7 +154,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
           <button onclick="closeLogoutModal()" class="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition focus:outline-none cursor-pointer border border-slate-200 dark:border-slate-700">
             Cancel
           </button>
-          <a href="<?php echo $basePath ?? '../'; ?>pages/logout.php" class="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl text-center transition focus:outline-none cursor-pointer shadow-xs">
+          <a href="/civentrel/pages/logout.php" class="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl text-center transition focus:outline-none cursor-pointer shadow-xs">
             Yes, Sign Out
           </a>
         </div>

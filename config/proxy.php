@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -25,6 +25,8 @@ function proxyRequest($url, $method = 'POST', $body = null, $sendCookie = true, 
     }
     
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);   // fail if can't connect in 5s
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);          // fail if total request > 10s
     
     $response = curl_exec($ch);
     

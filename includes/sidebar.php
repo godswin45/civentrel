@@ -123,19 +123,18 @@
 
           <!-- Business Tax & Licensing Dropdown -->
           <div class="space-y-1">
-            <button onclick="toggleDropdown('businessTaxDropdown', 'businessTaxChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, ['business-tax.php', 'business.php', 'business-permit.php']) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
+            <button onclick="toggleDropdown('businessTaxDropdown', 'businessTaxChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, ['business-tax.php', 'business.php']) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
               <div class="flex items-center space-x-3">
-                <i class="fa-solid fa-building-columns text-sm <?php echo in_array($currentPage, ['business-tax.php', 'business.php', 'business-permit.php']) ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
+                <i class="fa-solid fa-building-columns text-sm <?php echo in_array($currentPage, ['business-tax.php', 'business.php']) ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
                 <span class="sidebar-text truncate">Business Tax & Permits</span>
               </div>
               <div class="dropdown-right">
-                <i id="businessTaxChevron" class="fa-solid fa-chevron-down text-[10px] opacity-60 dropdown-chevron transition-transform duration-200 <?php echo in_array($currentPage, ['business-tax.php', 'business.php', 'business-permit.php']) ? 'rotate-180' : ''; ?>"></i>
+                <i id="businessTaxChevron" class="fa-solid fa-chevron-down text-[10px] opacity-60 dropdown-chevron transition-transform duration-200 <?php echo in_array($currentPage, ['business-tax.php', 'business.php']) ? 'rotate-180' : ''; ?>"></i>
               </div>
             </button>
-            <div id="businessTaxDropdown" class="<?php echo in_array($currentPage, ['business-tax.php', 'business.php', 'business-permit.php']) ? '' : 'hidden'; ?> pl-8 pr-2 space-y-0.5 font-medium sidebar-text">
+            <div id="businessTaxDropdown" class="<?php echo in_array($currentPage, ['business-tax.php', 'business.php']) ? '' : 'hidden'; ?> pl-8 pr-2 space-y-0.5 font-medium sidebar-text">
               <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/business-tax.php" class="flex items-center space-x-2 px-3 py-2 text-[11px] rounded-md transition <?php echo $currentPage == 'business-tax.php' ? 'text-brand-medium font-black bg-white border border-brand-border/40 shadow-xs' : 'text-slate-500 hover:text-brand-dark'; ?>"><i class="fa-solid fa-calculator text-[10px] <?php echo $currentPage == 'business-tax.php' ? 'text-brand-medium' : 'opacity-50'; ?>"></i> <span>Tax Assessments</span></a>
               <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/business.php" class="flex items-center space-x-2 px-3 py-2 text-[11px] rounded-md transition <?php echo $currentPage == 'business.php' ? 'text-brand-medium font-black bg-white border border-brand-border/40 shadow-xs' : 'text-slate-500 hover:text-brand-dark'; ?>"><i class="fa-solid fa-briefcase text-[10px] <?php echo $currentPage == 'business.php' ? 'text-brand-medium' : 'opacity-50'; ?>"></i> <span>Business Applications</span></a>
-              <a href="<?php echo $basePath ?? '../'; ?>pages/citizen/business-permit.php" class="flex items-center space-x-2 px-3 py-2 text-[11px] rounded-md transition <?php echo $currentPage == 'business-permit.php' ? 'text-brand-medium font-black bg-white border border-brand-border/40 shadow-xs' : 'text-slate-500 hover:text-brand-dark'; ?>"><i class="fa-solid fa-file-signature text-[10px] <?php echo $currentPage == 'business-permit.php' ? 'text-brand-medium' : 'opacity-50'; ?>"></i> <span>Citizen Permit Portal</span></a>
             </div>
           </div>
 
@@ -155,6 +154,12 @@
           <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/reports.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'reports.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-chart-pie text-sm <?php echo $currentPage == 'reports.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Financial Reports</span>
+          </a>
+
+          <!-- Daily Summary -->
+          <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/daily-summary.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'daily-summary.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
+            <i class="fa-solid fa-file-invoice-dollar text-sm <?php echo $currentPage == 'daily-summary.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
+            <span class="sidebar-text truncate">Daily Summary</span>
           </a>
 
           <!-- BOTTOM SECTION: MAIN CONTROL (ADMINISTRATION & GOVERNANCE) -->

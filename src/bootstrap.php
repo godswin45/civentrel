@@ -50,6 +50,9 @@ if (file_exists(__DIR__ . '/Services/TreasuryService.php')) {
 if (file_exists(__DIR__ . '/Services/AuditService.php')) {
     require_once __DIR__ . '/Services/AuditService.php';
 }
+if (file_exists(__DIR__ . '/Services/CitizenPaymentService.php')) {
+    require_once __DIR__ . '/Services/CitizenPaymentService.php';
+}
 
 // Load Middleware
 require_once __DIR__ . '/Middleware/SessionTimeout.php';
@@ -74,6 +77,7 @@ $userService = new \App\Services\UserService($userRepo);
 $permService = new \App\Services\PermissionService($permRepo);
 $treasuryService = class_exists('\App\Services\TreasuryService') ? new \App\Services\TreasuryService($treasuryRepo, $db ?? null) : null;
 $auditService = class_exists('\App\Services\AuditService') ? new \App\Services\AuditService($treasuryRepo, $db ?? null) : null;
+$paymentService = class_exists('\App\Services\CitizenPaymentService') ? new \App\Services\CitizenPaymentService($db ?? null) : null;
 
 // Initialize Header Service (and build user)
 $headerService = new \App\Services\HeaderService($userService, $permService, $authService);
