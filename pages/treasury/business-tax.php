@@ -52,10 +52,8 @@ if (isset($_GET['issued']) && !empty($_SESSION['flash_receipt'])) {
     unset($_SESSION['flash_receipt']);
 }
 
-$allCollections = [];
 try {
     $funds = $treasuryService->getFunds();
-    $allCollections = $treasuryService->getAllCollections();
     $auditService = $auditService ?? null;
 } catch (Exception $e) {
     $errorMsg = $errorMsg ?? $e->getMessage();
@@ -99,22 +97,11 @@ include __DIR__ . '/../../includes/sidebar.php';
           <input type="hidden" name="action" value="record_business_tax">
           <h2 class="text-sm font-extrabold text-slate-800 pb-1">Business Tax Payment</h2>
 
-         <?php
-  $bizNames = array_unique(array_filter(array_column($allCollections, 'payer_name')));
-  sort($bizNames);
-?>
-<div class="space-y-1.5">
-  <label class="text-xs font-semibold text-gray-500">Business Name</label>
-  <input type="text" name="business_name" required placeholder="e.g. Dela Cruz Sari-Sari Store"
-    list="biz-names-list" autocomplete="off"
-    class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
-  <datalist id="biz-names-list">
-    <?php foreach ($bizNames as $bn): ?>
-    <option value="<?= htmlspecialchars($bn) ?>">
-    <?php endforeach; ?>
-  </datalist>
-</div>
-
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold text-gray-500">Business Name</label>
+            <input type="text" name="business_name" required placeholder="e.g. Dela Cruz Sari-Sari Store"
+              class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+          </div>
 
           <div class="space-y-1.5">
             <label class="text-xs font-semibold text-gray-500">Business Permit Number</label>
