@@ -1,7 +1,6 @@
 .env
 .git
 *.log
-*.sql
 pages/treasury/uploads/*
 !pages/treasury/uploads/.gitkeep
 node_modules
