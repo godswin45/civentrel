@@ -50,6 +50,8 @@ if (ini_get("session.use_cookies")) {
 session_destroy();
 
 // Redirect to login page
-header("Location: /civentrel/login.php");
+// Determine base path to return to login
+$basePath = (isset($_SERVER['PHP_SELF']) && strpos($_SERVER['PHP_SELF'], '/civentrel/') !== false) ? '/civentrel/login.php' : '/login.php';
+header("Location: " . $basePath);
 exit;
 ?>
