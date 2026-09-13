@@ -1,12 +1,12 @@
-FROM php:8.0-apache
+FROM php:8.2-apache
 
 # Enable Apache mod_rewrite
 RUN a2enmod rewrite
 
-# Install system deps + PHP extensions
+# Install PHP extensions (curl is pre-compiled in the official image)
 RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
-    && docker-php-ext-install pdo pdo_mysql mysqli curl \
+    && docker-php-ext-install pdo pdo_mysql mysqli \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy application
