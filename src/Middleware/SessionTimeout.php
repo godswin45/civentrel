@@ -30,7 +30,7 @@ class SessionTimeout
         }
 
         if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $this->timeoutDuration) {
-            header('Location: /civentrel/pages/logout.php');
+            header('Location: ' . $this->basePath . 'pages/logout.php');
             exit;
         }
 

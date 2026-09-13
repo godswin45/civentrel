@@ -26,7 +26,7 @@ function updateCountdownDisplay() {
 
   if (remaining <= 0) {
     clearInterval(countdownInterval);
-    window.location.href = '/civentrel/pages/logout.php';
+    window.location.href = window.civentralBasePath + 'pages/logout.php';
   }
 }
 
