@@ -1,0 +1,484 @@
+import { IconSymbol } from '@/src/components/ui/icon-symbol';
+import { useTheme } from '@/src/context/ThemeContext';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { TreasuryService, TreasuryPaymentType } from '@/src/services/treasury-service';
+import { AuthService } from '@/src/services/auth-service';
+import { ProfileService } from '@/src/services/profile-service';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+
+const REVENUE_TYPES: TreasuryPaymentType[] = [
+  'Real Property Tax',
+  'Business Tax & Fees',
+  'Market Stall Rental',
+  'Community Tax Certificate',
+  'General government payment / miscellaneous fees',
+  'Business permit renewal or retirement payment',
+];
+
+const PAYMENT_METHODS = ['GCash', 'PayMaya', 'Bank Transfer', 'Debit/Credit Card'];
+
+function isTreasuryPaymentType(value: string | undefined): value is TreasuryPaymentType {
+  return Boolean(value && REVENUE_TYPES.includes(value as TreasuryPaymentType));
+}
+
+export function RevenueCollectionScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ taxType?: string | string[] }>();
+  const { isDarkMode } = useTheme();
+  const dm = isDarkMode;
+
+  const initialTaxType = Array.isArray(params.taxType) ? params.taxType[0] : params.taxType;
+
+  const [taxpayerName, setTaxpayerName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [selectedType, setSelectedType] = useState<TreasuryPaymentType>(
+    isTreasuryPaymentType(initialTaxType) ? initialTaxType : REVENUE_TYPES[0]
+  );
+  const [amount, setAmount] = useState('4200.00');
+  const [paymentMethod, setPaymentMethod] = useState('GCash');
+  const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const nextType = Array.isArray(params.taxType) ? params.taxType[0] : params.taxType;
+    if (isTreasuryPaymentType(nextType)) {
+      setSelectedType(nextType);
+    }
+
+    // Auto-fill from profile
+    const user = AuthService.getCurrentUser();
+    if (user.citizen_user_id || user.email) {
+      ProfileService.getProfile(user.email, user.citizen_user_id).then(res => {
+        if (res.status === 'success' && res.data) {
+          setTaxpayerName(res.data.fullName || '');
+          setEmail(res.data.email || '');
+          setPhone(res.data.phone || '');
+        }
+      });
+    }
+  }, [params.taxType]);
+
+  const subtotal = useMemo(() => {
+    const numericAmount = Number.parseFloat(amount) || 0;
+    return numericAmount;
+  }, [amount]);
+
+  const serviceFee = 35;
+  const total = subtotal + serviceFee;
+
+  const handleSubmit = async () => {
+    if (isSubmitting || subtotal <= 0) {
+      Alert.alert('Invalid amount', 'Enter an amount greater than zero before paying.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const result = await TreasuryService.submitPayment({
+      taxpayer_name: taxpayerName.trim(),
+      account_number: accountNumber.trim(),
+      email: email.trim(),
+      payment_type: selectedType,
+      amount: subtotal,
+      service_fee: serviceFee,
+      total_amount: total,
+      payment_method: paymentMethod,
+      notes: notes.trim(),
+    });
+    setIsSubmitting(false);
+
+    if (!result.success) {
+      Alert.alert('Payment not completed', result.message);
+      return;
+    }
+
+    Alert.alert('Payment Successful', result.message, [
+      {
+        text: 'View Receipt',
+        onPress: () => router.push('/treasury/receipt' as any),
+      },
+      { text: 'Close', style: 'cancel' },
+    ]);
+  };
+
+  return (
+    <View style={[styles.safeArea, { backgroundColor: dm ? '#0B132B' : '#F8FAFC' }]}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={[styles.heroCard, { backgroundColor: dm ? '#1C2541' : '#FFFFFF', borderColor: dm ? '#3A506B' : '#E2E8F0' }]}>
+          <View style={styles.heroBadgeRow}>
+            <View style={[styles.iconWrap, { backgroundColor: dm ? '#0F2942' : '#DCFCE7' }]}>
+              <IconSymbol name="banknote.fill" size={24} color={dm ? '#A7F3D0' : '#15803D'} />
+            </View>
+            <Text style={[styles.heroBadge, { color: dm ? '#A7F3D0' : '#15803D' }]}>Secure Collection</Text>
+          </View>
+
+          <Text style={[styles.heroTitle, { color: dm ? '#F8FAFC' : '#0F172A' }]}>Revenue Collection & Treasury</Text>
+          <Text style={[styles.heroSubtitle, { color: dm ? '#CBD5E1' : '#64748B' }]}>
+            Pay municipal taxes, business fees, and local dues quickly through a secure digital payment form.
+          </Text>
+
+          <View style={styles.amountPill}>
+            <Text style={styles.amountLabel}>Due Amount</Text>
+            <Text style={styles.amountValue}>₱{subtotal.toFixed(2)}</Text>
+          </View>
+        </View>
+
+        <View style={[styles.formCard, { backgroundColor: dm ? '#1C2541' : '#FFFFFF', borderColor: dm ? '#3A506B' : '#E2E8F0' }]}>
+          <Text style={[styles.sectionTitle, { color: dm ? '#F8FAFC' : '#0F172A' }]}>Citizen Information</Text>
+
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Taxpayer / Resident Name</Text>
+            <TextInput
+              value={taxpayerName}
+              onChangeText={setTaxpayerName}
+              placeholder="Enter full name"
+              editable={false}
+              placeholderTextColor={dm ? '#64748B' : '#94A3B8'}
+              style={[styles.input, { color: dm ? '#94A3B8' : '#64748B', backgroundColor: dm ? '#1E293B' : '#F1F5F9', borderColor: dm ? '#334155' : '#E2E8F0' }]}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Account / Tax Reference No.</Text>
+            <TextInput
+              value={accountNumber}
+              onChangeText={setAccountNumber}
+              placeholder="e.g. T-20485"
+              placeholderTextColor={dm ? '#64748B' : '#94A3B8'}
+              style={[styles.input, { color: dm ? '#F8FAFC' : '#0F172A', backgroundColor: dm ? '#0B132B' : '#F8FAFC', borderColor: dm ? '#3A506B' : '#CBD5E1' }]}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Email Address</Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              placeholder="name@example.com"
+              editable={false}
+              placeholderTextColor={dm ? '#64748B' : '#94A3B8'}
+              style={[styles.input, { color: dm ? '#94A3B8' : '#64748B', backgroundColor: dm ? '#1E293B' : '#F1F5F9', borderColor: dm ? '#334155' : '#E2E8F0' }]}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Phone Number</Text>
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              placeholder="e.g. 09123456789"
+              editable={false}
+              placeholderTextColor={dm ? '#64748B' : '#94A3B8'}
+              style={[styles.input, { color: dm ? '#94A3B8' : '#64748B', backgroundColor: dm ? '#1E293B' : '#F1F5F9', borderColor: dm ? '#334155' : '#E2E8F0' }]}
+            />
+          </View>
+
+          <Text style={[styles.sectionTitle, { color: dm ? '#F8FAFC' : '#0F172A' }]}>Payment Details</Text>
+
+          <View style={styles.selectionWrap}>
+            {REVENUE_TYPES.map((type) => {
+              const active = selectedType === type;
+              return (
+                <TouchableOpacity
+                  key={type}
+                  onPress={() => setSelectedType(type)}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? (dm ? '#0F2942' : '#E0F2FE') : dm ? '#0B132B' : '#F8FAFC',
+                      borderColor: active ? (dm ? '#38BDF8' : '#0284C7') : dm ? '#3A506B' : '#CBD5E1',
+                    },
+                  ]}>
+                  <Text style={[styles.optionChipText, { color: active ? (dm ? '#7DD3FC' : '#0369A1') : dm ? '#CBD5E1' : '#475569' }]}>
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.amountRow}>
+            <View style={styles.amountInputWrap}>
+              <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Amount Due</Text>
+              <TextInput
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={dm ? '#64748B' : '#94A3B8'}
+                style={[styles.input, { color: dm ? '#F8FAFC' : '#0F172A', backgroundColor: dm ? '#0B132B' : '#F8FAFC', borderColor: dm ? '#3A506B' : '#CBD5E1' }]}
+              />
+            </View>
+            <View style={styles.amountInputWrap}>
+              <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Due Date</Text>
+              <View style={[styles.staticField, { backgroundColor: dm ? '#0B132B' : '#F8FAFC', borderColor: dm ? '#3A506B' : '#CBD5E1' }]}>
+                <Text style={[styles.staticFieldText, { color: dm ? '#F8FAFC' : '#0F172A' }]}>15 Aug 2026</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Mode of Payment</Text>
+            <View style={styles.selectionWrap}>
+              {PAYMENT_METHODS.map((method) => {
+                const active = paymentMethod === method;
+                return (
+                  <TouchableOpacity
+                    key={method}
+                    onPress={() => setPaymentMethod(method)}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.methodChip,
+                      {
+                        backgroundColor: active ? (dm ? '#022C22' : '#DCFCE7') : dm ? '#0B132B' : '#F8FAFC',
+                        borderColor: active ? (dm ? '#10B981' : '#16A34A') : dm ? '#3A506B' : '#CBD5E1',
+                      },
+                    ]}>
+                    <Text style={[styles.methodChipText, { color: active ? (dm ? '#A7F3D0' : '#15803D') : dm ? '#CBD5E1' : '#475569' }]}>
+                      {method}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: dm ? '#CBD5E1' : '#475569' }]}>Notes / Payment Purpose</Text>
+            <TextInput
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              numberOfLines={4}
+              placeholder="Optional notes or reference"
+              placeholderTextColor={dm ? '#64748B' : '#94A3B8'}
+              style={[styles.textArea, { color: dm ? '#F8FAFC' : '#0F172A', backgroundColor: dm ? '#0B132B' : '#F8FAFC', borderColor: dm ? '#3A506B' : '#CBD5E1' }]}
+            />
+          </View>
+        </View>
+
+        <View style={[styles.summaryCard, { backgroundColor: dm ? '#1C2541' : '#FFFFFF', borderColor: dm ? '#3A506B' : '#E2E8F0' }]}>
+          <Text style={[styles.sectionTitle, { color: dm ? '#F8FAFC' : '#0F172A' }]}>Summary</Text>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: dm ? '#CBD5E1' : '#64748B' }]}>Service Amount</Text>
+            <Text style={[styles.summaryValue, { color: dm ? '#F8FAFC' : '#0F172A' }]}>₱{subtotal.toFixed(2)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: dm ? '#CBD5E1' : '#64748B' }]}>Service Fee</Text>
+            <Text style={[styles.summaryValue, { color: dm ? '#F8FAFC' : '#0F172A' }]}>₱{serviceFee.toFixed(2)}</Text>
+          </View>
+          <View style={[styles.summaryDivider, { backgroundColor: dm ? '#3A506B' : '#E2E8F0' }]} />
+          <View style={styles.summaryRow}>
+            <Text style={[styles.totalLabel, { color: dm ? '#F8FAFC' : '#0F172A' }]}>Total Due</Text>
+            <Text style={[styles.totalValue, { color: dm ? '#7DD3FC' : '#176B87' }]}>₱{total.toFixed(2)}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.payButton} onPress={handleSubmit} activeOpacity={0.9} disabled={isSubmitting}>
+            <Text style={styles.payButtonText}>{isSubmitting ? 'Connecting to Payment Gateway...' : 'Pay Online Securely'}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 110,
+    gap: 16,
+  },
+  heroCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 18,
+  },
+  heroBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  iconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBadge: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  amountPill: {
+    backgroundColor: '#176B87',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  amountLabel: {
+    color: '#E0F2FE',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  amountValue: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '800',
+  },
+  formCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+  },
+  summaryCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 14,
+  },
+  fieldGroup: {
+    marginBottom: 14,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+  },
+  selectionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionChip: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  optionChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  methodChip: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  methodChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  amountRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  amountInputWrap: {
+    flex: 1,
+  },
+  staticField: {
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  staticFieldText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  textArea: {
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 92,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    textAlignVertical: 'top',
+    fontSize: 14,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 13,
+  },
+  summaryValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  summaryDivider: {
+    height: 1,
+    marginVertical: 10,
+  },
+  totalLabel: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  totalValue: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  payButton: {
+    marginTop: 16,
+    backgroundColor: '#176B87',
+    borderRadius: 12,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+});
+

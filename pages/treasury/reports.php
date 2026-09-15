@@ -279,12 +279,7 @@ include __DIR__ . '/../../includes/sidebar.php';
         </div>
 
       </div>
-      <!-- Transaction History -->
-      <?php 
-      $module = 'reports';
-      $limit = 5;
-      include __DIR__ . '/../../includes/transaction_history.php';
-      ?>
+
     </main>
 
     <!-- Chart.js for reports page -->
