@@ -122,3 +122,47 @@ function toggleSidebar() {
 
     }
 }
+
+// FORMAT NAME FIELDS (Letters only, Title Case)
+document.addEventListener('DOMContentLoaded', () => {
+    const nameInputs = document.querySelectorAll('input[name="payer_name"], input[name="owner_name"], input[name="stall_holder"], input[name="first_name"], input[name="last_name"]');
+    
+    nameInputs.forEach(input => {
+        input.addEventListener('input', function(e) {
+            let val = this.value;
+            // 1. Remove anything that isn't a letter or a space
+            val = val.replace(/[^a-zA-Z\s]/g, '');
+            
+            // 2. Auto-capitalize the first letter of every word
+            val = val.replace(/\b[a-zA-Z]/g, function(char) {
+                return char.toUpperCase();
+            });
+            
+            this.value = val;
+        });
+    });
+
+    // FORMAT PAYEE FIELD (Allows numbers, Title Case)
+    const payeeInputs = document.querySelectorAll('input[name="payee"]');
+    payeeInputs.forEach(input => {
+        input.addEventListener('input', function(e) {
+            let val = this.value;
+            val = val.replace(/\b[a-zA-Z]/g, function(char) {
+                return char.toUpperCase();
+            });
+            this.value = val;
+        });
+    });
+
+    // FORMAT BUDGET REQUEST FIELDS (Allows numbers, Title Case)
+    const budgetInputs = document.querySelectorAll('input[name="department_name"], input[name="project_title"]');
+    budgetInputs.forEach(input => {
+        input.addEventListener('input', function(e) {
+            let val = this.value;
+            val = val.replace(/\b[a-zA-Z]/g, function(char) {
+                return char.toUpperCase();
+            });
+            this.value = val;
+        });
+    });
+});

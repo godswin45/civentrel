@@ -1,1 +1,8 @@
-Deny from all
+# Prevent directory listing
+Options -Indexes
+
+# Block access to malicious/executable file types
+<FilesMatch "\.(php|php4|php5|php7|php8|phtml|pl|py|jsp|asp|htm|html|shtml|sh|cgi)$">
+    Require all denied
+    Deny from all
+</FilesMatch>

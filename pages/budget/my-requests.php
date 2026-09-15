@@ -19,11 +19,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $amount = (float) ($_POST['requested_amount'] ?? 0);
         if ($amount <= 0) throw new Exception('Amount must be greater than zero.');
 
+        $supportingDocument = $treasuryService->saveBudgetPurposeDocument($_FILES['supporting_document'] ?? []);
+        
         $createdRequest = $treasuryService->createBudgetRequest([
             'department_name' => trim($_POST['department_name'] ?? ''),
             'department_code' => trim($_POST['department_code'] ?? ''),
             'project_title' => trim($_POST['project_title'] ?? ''),
             'description' => trim($_POST['description'] ?? ''),
+            'supporting_document' => $supportingDocument,
             'requested_amount' => $amount,
             'fund_id' => $_POST['fund_id'] ?? 'GF',
             'fiscal_year' => (int)($_POST['fiscal_year'] ?? date('Y')),
@@ -171,7 +174,7 @@ include __DIR__ . '/../../includes/sidebar.php';
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Request Form -->
         <div class="lg:col-span-2">
-          <form method="post" class="bg-white border border-slate-200/80 rounded-2xl shadow-xs p-5 space-y-4">
+          <form method="post" enctype="multipart/form-data" class="bg-white border border-slate-200/80 rounded-2xl shadow-xs p-5 space-y-4">
             <input type="hidden" name="action" value="create_request">
             <h2 class="text-sm font-extrabold text-slate-800 pb-1">Create New Budget Request</h2>
 
@@ -198,6 +201,13 @@ include __DIR__ . '/../../includes/sidebar.php';
               <label class="text-xs font-semibold text-gray-500">Description</label>
               <textarea name="description" rows="3" placeholder="Project description and objectives"
                 class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition"></textarea>
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-500">Supporting Document <span class="font-normal text-slate-400">(optional)</span></label>
+              <input type="file" name="supporting_document" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-xs text-slate-600 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition">
+              <p class="text-[11px] text-slate-400">PDF, DOC, DOCX, JPG, or PNG up to 10 MB.</p>
             </div>
 
             <div class="grid grid-cols-3 gap-3">
@@ -323,7 +333,12 @@ include __DIR__ . '/../../includes/sidebar.php';
               <tr class="hover:bg-brand-light/40 transition">
                 <td class="px-5 py-3 font-mono text-slate-500"><?= htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '') ?></td>
                 <td class="px-5 py-3 font-semibold text-slate-700"><?= htmlspecialchars($request['department_name']) ?></td>
-                <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?></td>
+                <td class="px-5 py-3 text-slate-500">
+                  <?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>
+                  <?php if (!empty($request['supporting_document'])): ?>
+                    <a href="<?= htmlspecialchars($request['supporting_document']) ?>" target="_blank" class="block text-[10px] text-brand-dark font-bold hover:underline mt-1"><i class="fa-solid fa-paperclip mr-1"></i>View attachment</a>
+                  <?php endif; ?>
+                </td>
                 <td class="px-5 py-3 font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($request['requested_amount']) ?></td>
                 <td class="px-5 py-3">
                   <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase

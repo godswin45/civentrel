@@ -293,6 +293,36 @@ class TreasuryService {
         return 'uploads/vouchers/' . $filename;
     }
 
+    public function saveBudgetPurposeDocument(array $file): ?string {
+        if (empty($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+        if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            throw new \Exception('The supporting document could not be uploaded.');
+        }
+        if (($file['size'] ?? 0) > 10 * 1024 * 1024) {
+            throw new \Exception('The supporting document must be 10 MB or smaller.');
+        }
+
+        $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+        $extension = strtolower((string) pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($extension, $allowedExtensions, true)) {
+            throw new \Exception('Supporting document must be PDF, DOC, DOCX, JPG, JPEG, or PNG.');
+        }
+
+        $directory = __DIR__ . '/../../pages/treasury/uploads/budget';
+        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+            throw new \Exception('Unable to prepare the supporting document storage folder.');
+        }
+
+        $filename = 'budget_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . $extension;
+        if (!move_uploaded_file($file['tmp_name'], $directory . '/' . $filename)) {
+            throw new \Exception('Unable to save the supporting document.');
+        }
+
+        return 'uploads/budget/' . $filename;
+    }
+
     /**
      * Validate the designated code required before releasing funds.
      */
@@ -618,6 +648,7 @@ class TreasuryService {
             'department_code' => $input['department_code'] ?? '',
             'project_title'   => $input['project_title'] ?? '',
             'description'     => $input['description'] ?? '',
+            'supporting_document' => $input['supporting_document'] ?? null,
             'budget_type'     => $input['budget_type'] ?? 'operational',
             'requested_amount'=> $input['requested_amount'],
             'justification'   => $input['justification'] ?? '',
