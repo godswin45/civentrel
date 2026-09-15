@@ -152,7 +152,12 @@ include __DIR__ . '/../../includes/sidebar.php';
               <tr class="hover:bg-slate-50 transition-colors">
                 <td class="px-5 py-4 font-mono text-[11px] font-semibold text-slate-500 whitespace-nowrap"><?= htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '') ?></td>
                 <td class="px-5 py-4 font-semibold text-slate-700 whitespace-nowrap"><?= htmlspecialchars($request['department_name']) ?></td>
-                <td class="px-5 py-4 text-slate-600 max-w-[220px] truncate" title="<?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>"><?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?></td>
+                <td class="px-5 py-4 text-slate-600 max-w-[220px] truncate" title="<?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>">
+                  <?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>
+                  <?php if (!empty($request['supporting_document'])): ?>
+                    <a href="<?= htmlspecialchars($request['supporting_document']) ?>" target="_blank" class="block text-[10px] text-brand-dark font-bold hover:underline mt-1"><i class="fa-solid fa-paperclip mr-1"></i>View attachment</a>
+                  <?php endif; ?>
+                </td>
                 <td class="px-5 py-4 font-mono font-bold text-slate-800 whitespace-nowrap"><?= $treasuryService->formatPeso($request['requested_amount']) ?></td>
                 <td class="px-5 py-4 text-slate-500 max-w-[220px] truncate" title="<?= htmlspecialchars($request['justification'] ?? '-') ?>"><?= htmlspecialchars($request['justification'] ?? '-') ?></td>
                 <td class="px-5 py-3">

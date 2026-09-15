@@ -336,7 +336,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <td class="px-5 py-3 text-slate-500">
                   <?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>
                   <?php if (!empty($request['supporting_document'])): ?>
-                    <a href="<?= htmlspecialchars($request['supporting_document']) ?>" target="_blank" class="block text-[10px] text-brand-dark font-bold hover:underline mt-1"><i class="fa-solid fa-paperclip mr-1"></i>View attachment</a>
+                    <a href="../treasury/<?= htmlspecialchars($request['supporting_document']) ?>" target="_blank" class="block text-[10px] text-brand-dark font-bold hover:underline mt-1"><i class="fa-solid fa-paperclip mr-1"></i>View attachment</a>
                   <?php endif; ?>
                 </td>
                 <td class="px-5 py-3 font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($request['requested_amount']) ?></td>

@@ -154,8 +154,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // FORMAT BUDGET REQUEST FIELDS (Allows numbers, Title Case)
-    const budgetInputs = document.querySelectorAll('input[name="department_name"], input[name="project_title"]');
+    // FORMAT ALPHANUMERIC FIELDS (Allows numbers, Title Case)
+    const budgetInputs = document.querySelectorAll('input[name="department_name"], input[name="project_title"], input[name="business_name"], input[name="barangay"], input[name="line_of_business"], input[name="stall_number"]');
     budgetInputs.forEach(input => {
         input.addEventListener('input', function(e) {
             let val = this.value;
