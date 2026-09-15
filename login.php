@@ -100,7 +100,11 @@ $recaptchaSiteKey = getenv('RECAPTCHA_SITE_KEY') ?: '';
         </div>
 
         <form id="loginForm" class="space-y-3" onsubmit="handleLogin(event)"
-          data-bypass-otp="<?php echo (getenv('BYPASS_OTP') === 'false' || getenv('BYPASS_OTP') === '0') ? 'false' : 'true'; ?>">
+          data-bypass-otp="<?php 
+            $bypass = getenv('BYPASS_OTP');
+            if ($bypass === false) $bypass = $_SERVER['BYPASS_OTP'] ?? $_ENV['BYPASS_OTP'] ?? 'false';
+            echo ($bypass === 'true' || $bypass === '1') ? 'true' : 'false'; 
+          ?>">
     
         <div class="space-y-1">
           <label for="employeeId" class="text-xs font-semibold text-gray-500">Employee ID</label>
