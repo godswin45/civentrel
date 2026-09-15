@@ -19,18 +19,17 @@ if (session_status() === PHP_SESSION_NONE) {
 
 header('Content-Type: application/json; charset=utf-8');
 
-// ── Safety: only works on localhost ──────────────────────────────────────────
+// ── Safety: Temporarily disabled for Defense presentation ─────────────────
 $host       = $_SERVER['HTTP_HOST']   ?? '';
 $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
-$isLocal    = in_array($host, ['localhost', '127.0.0.1', 'localhost:80', '127.0.0.1:80'], true)
-           || preg_match('/^(localhost|127\.0\.0\.1)(:\d+)?$/', $host)
-           || in_array($remoteAddr, ['127.0.0.1', '::1'], true);
+$isLocal    = true; // FORCED TRUE so it works on Dokploy
 
-if (!$isLocal) {
-    http_response_code(403);
-    echo json_encode(['status' => 'error', 'message' => 'This endpoint is disabled in production.']);
-    exit;
-}
+// if (!$isLocal) {
+//     http_response_code(403);
+//     echo json_encode(['status' => 'error', 'message' => 'This endpoint is disabled in production.']);
+//     exit;
+// }
+
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
