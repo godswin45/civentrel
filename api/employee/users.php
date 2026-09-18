@@ -86,6 +86,80 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
     }
 }
 
+// ── Local User Creation (when role_id is a non-numeric fallback ID) ──
+if ($method === 'POST') {
+    $pd = json_decode($body, true) ?? [];
+    $rId = $pd['role_id'] ?? '';
+    if (!is_numeric($rId)) {
+        try {
+            require_once __DIR__ . '/../../config/database.php';
+            $db = Database::getInstance();
+            $db->query("CREATE TABLE IF NOT EXISTS local_users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(64) UNIQUE, first_name VARCHAR(100), middle_name VARCHAR(100), last_name VARCHAR(100),
+                employee_id VARCHAR(64) UNIQUE, email VARCHAR(191) UNIQUE, mobile_number VARCHAR(30),
+                department_id INT DEFAULT 0, position_name VARCHAR(191),
+                role_id VARCHAR(64), role_name VARCHAR(100), role_prefix VARCHAR(20),
+                password VARCHAR(255), temp_password VARCHAR(100),
+                status VARCHAR(30) DEFAULT 'active', is_superadmin TINYINT DEFAULT 0,
+                is_global_access TINYINT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
+            $fN = trim($pd['first_name'] ?? '');  $mN = trim($pd['middle_name'] ?? '');
+            $lN = trim($pd['last_name']  ?? '');  $eI = trim($pd['employee_id'] ?? '');
+            $em = trim($pd['email']      ?? '');  $mo = trim($pd['mobile_number'] ?? '');
+            $dI = intval($pd['department_id'] ?? 0);
+            $po = trim($pd['position_name'] ?? '');
+            $rN = trim($pd['role_name']   ?? str_replace('-L', '', (string)$rId));
+            $rP = trim($pd['role_prefix'] ?? (explode('-', (string)$rId)[0] ?? 'EMP'));
+            if (!$fN || !$lN || !$em || !$po) respond(['status'=>'error','message'=>'Required fields missing.'], 422);
+            $ex = $db->query('SELECT id FROM local_users WHERE email=? OR employee_id=? LIMIT 1', [$em, $eI]);
+            if (!empty($ex)) respond(['status'=>'error','message'=>'Email or Employee ID already exists.'], 409);
+            $tP = 'Civentral@' . rand(1000, 9999);
+            $uI = 'LOCAL-' . strtoupper(bin2hex(random_bytes(6)));
+            $db->query('INSERT INTO local_users (user_id,first_name,middle_name,last_name,employee_id,email,mobile_number,department_id,position_name,role_id,role_name,role_prefix,password,temp_password) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                [$uI,$fN,$mN,$lN,$eI,$em,$mo,$dI,$po,$rId,$rN,$rP,password_hash($tP,PASSWORD_BCRYPT),$tP]);
+
+            // Dispatch Email Notification
+            try {
+                require_once __DIR__ . '/../../config/mailer.php';
+                $subject = "Welcome to CIVENTRAL - Account Credentials";
+                $htmlBody = '
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 30px;">
+                    <h2 style="text-align: center; color: #0f172a; margin-top: 0; font-size: 22px;">CIVENTRAL PORTAL</h2>
+                    <p style="text-align: center; color: #3b82f6; font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                    <p style="color: #475569; font-size: 14px;">Hello <strong>' . $fN . ' ' . $lN . '</strong>,</p>
+                    <p style="color: #475569; font-size: 14px; line-height: 1.6;">Your official CIVENTRAL system user account has been successfully generated. Below are your assigned Employee ID and login credentials:</p>
+                    
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-top: 25px;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 8px 0; color: #64748b; font-size: 14px; font-weight: 600;">Assigned Employee ID:</td>
+                                <td style="padding: 8px 0; text-align: right; font-weight: bold; font-family: monospace; font-size: 14px; color: #0f172a;">' . $eI . '</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; color: #64748b; font-size: 14px; font-weight: 600;">Registered Email:</td>
+                                <td style="padding: 8px 0; text-align: right; font-weight: bold; font-size: 14px; color: #2563eb;">' . $em . '</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; color: #64748b; font-size: 14px; font-weight: 600;">Temporary Password:</td>
+                                <td style="padding: 8px 0; text-align: right; font-weight: bold; font-size: 15px; color: #0d9488;">' . $tP . '</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>';
+                sendSystemEmail($em, "$fN $lN", $subject, $htmlBody);
+            } catch (\Throwable $e) {
+                // Silently ignore mailer failure in fallback
+            }
+
+            respond(['status'=>'success','message'=>'Local account created.','user_name'=>"$fN $lN",'email'=>$em,'employee_id'=>$eI,'temp_password'=>$tP,'role_name'=>$rN]);
+        } catch (\Throwable $ex) {
+            respond(['status'=>'error','message'=>'Local DB error: '.$ex->getMessage()], 500);
+        }
+    }
+}
+
 $result = proxyRequest($remoteUrl, $method, $body);
 
 // ── Local Fallback for GET (departments & roles) ──────────────────
@@ -105,13 +179,14 @@ if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['
     ];
 
     $fallbackRoles = [
-        ['role_id' => 1, 'role_name' => 'Super Administrator',  'role_prefix' => 'SADM', 'is_superadmin' => 1, 'is_global_access' => 1],
-        ['role_id' => 2, 'role_name' => 'Treasury Officer',     'role_prefix' => 'TRES', 'is_superadmin' => 0, 'is_global_access' => 0],
-        ['role_id' => 3, 'role_name' => 'Cashier',              'role_prefix' => 'CASH', 'is_superadmin' => 0, 'is_global_access' => 0],
-        ['role_id' => 4, 'role_name' => 'Treasury Staff',       'role_prefix' => 'TSTA', 'is_superadmin' => 0, 'is_global_access' => 0],
-        ['role_id' => 5, 'role_name' => 'Budget Officer',       'role_prefix' => 'BDGT', 'is_superadmin' => 0, 'is_global_access' => 0],
-        ['role_id' => 6, 'role_name' => 'Department Admin',     'role_prefix' => 'DADM', 'is_superadmin' => 0, 'is_global_access' => 0],
-        ['role_id' => 7, 'role_name' => 'Revenue Collector',    'role_prefix' => 'RCOL', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 1,    'role_name' => 'Super Administrator', 'role_prefix' => 'SADM', 'is_superadmin' => 1, 'is_global_access' => 1],
+        ['role_id' => 'TRMG-L', 'role_name' => 'Treasury Manager','role_prefix' => 'TRMG', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 2,    'role_name' => 'Treasury Officer',    'role_prefix' => 'TRES', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 3,    'role_name' => 'Cashier',             'role_prefix' => 'CASH', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 4,    'role_name' => 'Treasury Staff',      'role_prefix' => 'TSTA', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 5,    'role_name' => 'Budget Officer',      'role_prefix' => 'BDGT', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 6,    'role_name' => 'Department Admin',    'role_prefix' => 'DADM', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 7,    'role_name' => 'Revenue Collector',   'role_prefix' => 'RCOL', 'is_superadmin' => 0, 'is_global_access' => 0],
     ];
 
     // Handle: generate_emp_id
@@ -138,9 +213,16 @@ if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['
         respond(['status' => 'success', 'roles' => $fallbackRoles]);
     }
 
-    // Default GET: return departments + roles + current_user
+    // Default GET: return departments + roles + current_user + local_users
+    $localUsers = [];
+    try {
+        require_once __DIR__ . '/../../config/database.php';
+        $db = Database::getInstance();
+        $localUsers = $db->query('SELECT * FROM local_users ORDER BY created_at DESC', []) ?: [];
+    } catch (\Throwable $e) { $localUsers = []; }
     respond([
         'status'       => 'success',
+        'data'         => $localUsers,
         'roles'        => $fallbackRoles,
         'departments'  => $fallbackDepartments,
         'current_user' => [
@@ -151,5 +233,17 @@ if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['
     ]);
 }
 
-respond($result['body'], $result['code']);
-
+// Merge local_users into successful live-server response
+$liveBody = $result['body'] ?? [];
+if (($liveBody['status'] ?? '') === 'success' && $method === 'GET') {
+    try {
+        require_once __DIR__ . '/../../config/database.php';
+        $db = Database::getInstance();
+        $localUsers = $db->query('SELECT * FROM local_users ORDER BY created_at DESC', []) ?: [];
+        if (!empty($localUsers)) {
+            $existing = $liveBody['data'] ?? $liveBody['users'] ?? [];
+            $liveBody['data'] = array_merge($existing, $localUsers);
+        }
+    } catch (\Throwable $e) { /* table may not exist yet */ }
+}
+respond($liveBody, $result['code']);

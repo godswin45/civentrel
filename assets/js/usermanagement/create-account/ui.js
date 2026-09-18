@@ -86,10 +86,33 @@ function populateRoles() {
     roleSelect.appendChild(opt);
   });
 
+  // ── Client-side fallback ──────────────────────────────────────────
+  // If after all filtering the dropdown is still empty, inject hardcoded
+  // Treasury staff roles so the form is always usable.
+  if (roleSelect.options.length <= 1) {
+    const localFallback = [
+      { id: 'TRMG-L', name: 'Treasury Manager',   prefix: 'TRMG' },
+      { id: 'TRES-L', name: 'Treasury Officer',   prefix: 'TRES' },
+      { id: 'CASH-L', name: 'Cashier',            prefix: 'CASH' },
+      { id: 'TSTA-L', name: 'Treasury Staff',     prefix: 'TSTA' },
+      { id: 'RCOL-L', name: 'Revenue Collector',  prefix: 'RCOL' },
+      { id: 'BDGT-L', name: 'Budget Officer',     prefix: 'BDGT' },
+    ];
+    localFallback.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.dataset.prefix = r.prefix;
+      opt.dataset.name = r.name;
+      opt.textContent = `${r.name} (${r.prefix})`;
+      roleSelect.appendChild(opt);
+    });
+  }
+
   if (currentVal && Array.from(roleSelect.options).some(o => o.value === currentVal)) {
     roleSelect.value = currentVal;
   }
 }
+
 
 // POPULATE DEPARTMENTS SELECT
 function populateDepartments() {
@@ -127,7 +150,7 @@ function populateDepartments() {
   }
 }
 
-// AUTO-GENERATE EMPLOYEE ID BASED ON ROLE PREFIX, YEAR & SEQUENCE (e.g. SDA-2026-002)
+// AUTO-GENERATE EMPLOYEE ID BASED ON ROLE PREFIX, YEAR & SEQUENCE (e.g. TRMG-2026-002)
 async function autoGenerateEmpId() {
   const roleSelect = document.getElementById('role');
   const empIdInput = document.getElementById('empId');
@@ -138,6 +161,19 @@ async function autoGenerateEmpId() {
     return;
   }
 
+  // If it's a local fallback ID (e.g. 'TRMG-L'), generate entirely client-side
+  if (isNaN(parseInt(roleId))) {
+    const roleOpt = roleSelect ? roleSelect.options[roleSelect.selectedIndex] : null;
+    const prefix = roleOpt ? (roleOpt.dataset.prefix || 'EMP') : 'EMP';
+    const year = new Date().getFullYear();
+    const seq = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
+    const empId = `${prefix}-${year}-${seq}`;
+    if (empIdInput) empIdInput.value = empId;
+    if (typeof showToast === 'function') showToast(`Auto-generated Employee ID: ${empId}`);
+    return;
+  }
+
+  // Numeric ID: call the API
   try {
     const response = await fetch(`../../api/employee/users.php?action=generate_emp_id&role_id=${roleId}`);
     const data = await response.json();
@@ -153,3 +189,4 @@ async function autoGenerateEmpId() {
     if (typeof showToast === 'function') showToast('Network error calculating next Employee ID.', true);
   }
 }
+

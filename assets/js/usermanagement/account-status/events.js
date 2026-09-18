@@ -9,7 +9,7 @@ function isSelfUser(user) {
 
 // TOGGLE DEACTIVATE
 async function handleStatusToggle(userId, toggleInput) {
-  const user = accountUsers.find(u => u.id === userId || u.db_id === userId);
+  const user = accountUsers.find(u => u.id == userId || u.db_id == userId);
   if (!user) return;
 
   if (isSelfUser(user)) {
@@ -37,7 +37,7 @@ async function handleStatusToggle(userId, toggleInput) {
 }
 
 async function executeDeactivate() {
-  const user = accountUsers.find(u => u.id === window.pendingActionUser || u.db_id === window.pendingActionUser);
+  const user = accountUsers.find(u => u.id == window.pendingActionUser || u.db_id == window.pendingActionUser);
   if (user) {
     if (isSelfUser(user)) {
       if (typeof showToast === 'function') showToast("Operation denied: You cannot deactivate your own account.", true);
@@ -57,7 +57,7 @@ async function executeDeactivate() {
 
 // LOCK/UNLOCK MODAL TRIGGERS
 function triggerLockToggle(userId) {
-  const user = accountUsers.find(u => u.id === userId || u.db_id === userId);
+  const user = accountUsers.find(u => u.id == userId || u.db_id == userId);
   if (!user) return;
 
   if (isSelfUser(user)) {
@@ -110,7 +110,7 @@ function triggerLockToggle(userId) {
 }
 
 async function executeLockToggle() {
-  const user = accountUsers.find(u => u.id === window.pendingActionUser);
+  const user = accountUsers.find(u => u.id == window.pendingActionUser);
   if (user && typeof updateUserStatusAPI === 'function') {
     if (user.status === 'Locked') {
       const ok = await updateUserStatusAPI(window.pendingActionUser, 'Active', 0);
@@ -125,7 +125,7 @@ async function executeLockToggle() {
 
 // ARCHIVE/RESTORE MODAL TRIGGERS
 function triggerArchiveToggle(userId) {
-  const user = accountUsers.find(u => u.id === userId || u.db_id === userId);
+  const user = accountUsers.find(u => u.id == userId || u.db_id == userId);
   if (!user) return;
 
   if (isSelfUser(user)) {
@@ -173,7 +173,7 @@ function triggerArchiveToggle(userId) {
 }
 
 async function executeArchiveToggle() {
-  const user = accountUsers.find(u => u.id === window.pendingActionUser);
+  const user = accountUsers.find(u => u.id == window.pendingActionUser);
   if (user && typeof updateUserStatusAPI === 'function') {
     if (user.status === 'Archived') {
       const ok = await updateUserStatusAPI(window.pendingActionUser, 'Active');

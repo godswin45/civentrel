@@ -6,7 +6,7 @@
     window.loadCiventralScript = function(src, callback = null) {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = basePath + src;
+            script.src = basePath + src + '?v=' + Date.now();
             script.async = false; 
             script.onload = () => {
                 if (callback) callback();

@@ -27,7 +27,7 @@ function closeModal(id) {
 
 // VIEW PROFILE MODAL
 function openViewModal(userId) {
-  const user = systemUsers.find(u => u.user_id === userId);
+  const user = systemUsers.find(u => String(u.user_id) === String(userId));
   if (!user) return;
 
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
@@ -106,7 +106,7 @@ function openEditModal(userId) {
     return;
   }
 
-  const user = systemUsers.find(u => u.user_id === userId);
+  const user = systemUsers.find(u => String(u.user_id) === String(userId));
   if (!user) return;
 
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
@@ -150,7 +150,7 @@ function openEditModal(userId) {
 
 // SECURITY LOGIN AUDIT LOGS MODAL
 function openHistoryModal(userId) {
-  const user = systemUsers.find(u => u.user_id === userId);
+  const user = systemUsers.find(u => String(u.user_id) === String(userId));
   if (!user) return;
 
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';

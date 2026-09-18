@@ -124,6 +124,56 @@ if (strtolower($employeeIdOrEmail) === 'maintenance') {
 $apiBaseUrl = getenv('EXPO_PUBLIC_API_BASE_URL') ?: 'https://civentral.tech/api/employee';
 $remoteUrl = rtrim($apiBaseUrl, '/') . '/login.php';
 
+// ── Local User Login (for locally-created accounts) ──────────────
+try {
+    require_once __DIR__ . '/../../config/database.php';
+    $db = Database::getInstance();
+    $localUser = $db->query(
+        "SELECT * FROM local_users WHERE (email = ? OR employee_id = ?) AND status = 'active' LIMIT 1",
+        [$employeeIdOrEmail, $employeeIdOrEmail]
+    );
+    if (!empty($localUser)) {
+        $lu = $localUser[0];
+        if (password_verify($password, $lu['password'])) {
+            // Populate session exactly like live login does
+            $_SESSION['user_id']        = $lu['user_id'];
+            $_SESSION['employee_id']    = $lu['employee_id'];
+            $_SESSION['email']          = $lu['email'];
+            $_SESSION['first_name']     = $lu['first_name'];
+            $_SESSION['last_name']      = $lu['last_name'];
+            $_SESSION['role_id']        = $lu['role_id'];
+            $_SESSION['role_name']      = $lu['role_name'];
+            $_SESSION['role_prefix']    = $lu['role_prefix'];
+            $_SESSION['dept_id']        = $lu['department_id'];
+            $_SESSION['is_superadmin']  = (int)$lu['is_superadmin'];
+            $_SESSION['is_global_access'] = (int)$lu['is_global_access'];
+            $_SESSION['LAST_ACTIVITY']  = time();
+            respond([
+                'status' => 'success',
+                'message' => 'Login successful.',
+                'user' => [
+                    'user_id'      => $lu['user_id'],
+                    'employee_id'  => $lu['employee_id'],
+                    'first_name'   => $lu['first_name'],
+                    'last_name'    => $lu['last_name'],
+                    'email'        => $lu['email'],
+                    'role_id'      => $lu['role_id'],
+                    'role_name'    => $lu['role_name'],
+                    'role_prefix'  => $lu['role_prefix'],
+                    'department_id'=> $lu['department_id'],
+                    'position'     => $lu['position_name'],
+                    'is_superadmin'=> (int)$lu['is_superadmin'],
+                ],
+            ]);
+        } else {
+            respond(['status' => 'error', 'message' => 'Invalid password.'], 401);
+        }
+    }
+} catch (\Throwable $localErr) {
+    // local_users table may not exist yet — fall through to live server
+}
+
+
 $result = proxyRequest($remoteUrl, 'POST', [
     'employeeId' => $employeeIdOrEmail,
     'password' => $password,
