@@ -87,4 +87,69 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
 }
 
 $result = proxyRequest($remoteUrl, $method, $body);
+
+// ── Local Fallback for GET (departments & roles) ──────────────────
+// If the live server is unreachable, return hardcoded Treasury data
+// so the Create Account form is still usable locally.
+if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['status'] !== 'success')) {
+    $action = $_GET['action'] ?? '';
+
+    $fallbackDepartments = [
+        ['department_id' => 1, 'department_name' => 'Revenue & Treasury',      'department_code' => 'TREAS'],
+        ['department_id' => 2, 'department_name' => 'Budget & Finance',         'department_code' => 'BUDG'],
+        ['department_id' => 3, 'department_name' => 'Office of the Mayor',      'department_code' => 'MAYOR'],
+        ['department_id' => 4, 'department_name' => 'Engineering Department',   'department_code' => 'ENGR'],
+        ['department_id' => 5, 'department_name' => 'Health Services',          'department_code' => 'HLTH'],
+        ['department_id' => 6, 'department_name' => 'Market & Trade',           'department_code' => 'MKT'],
+        ['department_id' => 7, 'department_name' => 'Information Technology',   'department_code' => 'IT'],
+    ];
+
+    $fallbackRoles = [
+        ['role_id' => 1, 'role_name' => 'Super Administrator',  'role_prefix' => 'SADM', 'is_superadmin' => 1, 'is_global_access' => 1],
+        ['role_id' => 2, 'role_name' => 'Treasury Officer',     'role_prefix' => 'TRES', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 3, 'role_name' => 'Cashier',              'role_prefix' => 'CASH', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 4, 'role_name' => 'Treasury Staff',       'role_prefix' => 'TSTA', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 5, 'role_name' => 'Budget Officer',       'role_prefix' => 'BDGT', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 6, 'role_name' => 'Department Admin',     'role_prefix' => 'DADM', 'is_superadmin' => 0, 'is_global_access' => 0],
+        ['role_id' => 7, 'role_name' => 'Revenue Collector',    'role_prefix' => 'RCOL', 'is_superadmin' => 0, 'is_global_access' => 0],
+    ];
+
+    // Handle: generate_emp_id
+    if ($action === 'generate_emp_id') {
+        $roleId = intval($_GET['role_id'] ?? 0);
+        // Find the prefix for the selected role
+        $prefix = 'EMP';
+        foreach ($fallbackRoles as $r) {
+            if ($r['role_id'] === $roleId) {
+                $prefix = $r['role_prefix'];
+                break;
+            }
+        }
+        $year   = date('Y');
+        $seq    = str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
+        respond([
+            'status'      => 'success',
+            'employee_id' => $prefix . '-' . $year . '-' . $seq,
+        ]);
+    }
+
+    // Handle: get_roles_by_dept
+    if ($action === 'get_roles_by_dept') {
+        respond(['status' => 'success', 'roles' => $fallbackRoles]);
+    }
+
+    // Default GET: return departments + roles + current_user
+    respond([
+        'status'       => 'success',
+        'roles'        => $fallbackRoles,
+        'departments'  => $fallbackDepartments,
+        'current_user' => [
+            'user_id'       => $_SESSION['user_id']       ?? 1,
+            'department_id' => $_SESSION['dept_id']       ?? 1,
+            'is_superadmin' => $_SESSION['is_superadmin'] ?? 1,
+        ],
+    ]);
+}
+
 respond($result['body'], $result['code']);
+
