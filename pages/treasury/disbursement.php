@@ -26,21 +26,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'amount'     => $amount,
                 'created_by' => $headerUser['full_name'] ?? null,
             ]);
-            
+
             // Log the transaction
             if ($auditService) {
                 $auditService->logTransaction([
-                    'user_id' => $_SESSION['user_id'] ?? null,
-                    'username' => $headerUser['full_name'] ?? 'System',
-                    'module' => 'disbursement',
-                    'action' => 'create',
+                    'user_id'    => $_SESSION['user_id'] ?? null,
+                    'username'   => $headerUser['full_name'] ?? 'System',
+                    'module'     => 'disbursement',
+                    'action'     => 'create',
                     'table_name' => 'tr_disbursements',
-                    'record_id' => $createdVoucher['id'] ?? null,
+                    'record_id'  => $createdVoucher['id'] ?? null,
                     'new_values' => json_encode($createdVoucher)
                 ]);
             }
-            
+
+            // ── AI Anomaly Detection ───────────────────────────────────
+            try {
+                $allVouchersAI   = $treasuryService->getAllVouchers();
+                $releasedAI      = array_filter($allVouchersAI, fn($v) => strtolower($v['status'] ?? '') === 'disbursed');
+                if (count($releasedAI) >= 3) {
+                    $amtsAI  = array_column(array_values($releasedAI), 'amount');
+                    $avgAI   = array_sum($amtsAI) / count($amtsAI);
+                    if ($amount > $avgAI * 3) {
+                        require_once __DIR__ . '/../../config/mailer.php';
+                        $payeeAI  = htmlspecialchars(trim($_POST['payee'] ?? 'Unknown'));
+                        $riskAI   = round($amount / $avgAI, 1);
+                        $purposeAI = htmlspecialchars(trim($_POST['purpose'] ?? 'N/A'));
+                        $byAI     = htmlspecialchars($headerUser['full_name'] ?? 'Unknown');
+                        $emailBodyAI = '
+                        <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #fecaca;border-radius:10px;overflow:hidden;">
+                          <div style="background:linear-gradient(135deg,#7f1d1d,#1e293b);padding:28px 32px;text-align:center;">
+                            <h1 style="color:#fef2f2;font-size:20px;margin:0;">&#9888;&#65039; AI SECURITY ALERT</h1>
+                            <p style="color:#fca5a5;font-size:12px;margin:8px 0 0;">Civentral Anomaly Detection System</p>
+                          </div>
+                          <div style="padding:28px 32px;background:#fff;">
+                            <p style="color:#1e293b;font-size:14px;">A disbursement voucher was flagged as <strong style="color:#dc2626;">SUSPICIOUS</strong>:</p>
+                            <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;border:1px solid #fecaca;border-radius:8px;">
+                              <tr style="background:#fef2f2;"><td style="padding:10px 14px;color:#64748b;font-weight:bold;width:40%;">Payee</td><td style="padding:10px 14px;font-weight:bold;">'.$payeeAI.'</td></tr>
+                              <tr><td style="padding:10px 14px;color:#64748b;font-weight:bold;">Amount</td><td style="padding:10px 14px;color:#dc2626;font-weight:bold;font-size:18px;">&#8369;'.number_format($amount,2).'</td></tr>
+                              <tr style="background:#fef2f2;"><td style="padding:10px 14px;color:#64748b;font-weight:bold;">Avg Disbursement</td><td style="padding:10px 14px;">&#8369;'.number_format($avgAI,2).'</td></tr>
+                              <tr><td style="padding:10px 14px;color:#64748b;font-weight:bold;">Risk Level</td><td style="padding:10px 14px;"><span style="background:#dc2626;color:#fff;padding:3px 10px;border-radius:999px;font-weight:bold;">'.$riskAI.'x ABOVE AVERAGE</span></td></tr>
+                              <tr style="background:#fef2f2;"><td style="padding:10px 14px;color:#64748b;font-weight:bold;">Submitted By</td><td style="padding:10px 14px;">'.$byAI.'</td></tr>
+                              <tr><td style="padding:10px 14px;color:#64748b;font-weight:bold;">Purpose</td><td style="padding:10px 14px;">'.$purposeAI.'</td></tr>
+                            </table>
+                            <p style="color:#b91c1c;font-weight:bold;">&#128683; Do NOT release this voucher until verified by authorized personnel.</p>
+                            <div style="text-align:center;margin:20px 0;">
+                              <a href="https://civentral.tech/pages/treasury/disbursement.php" style="background:#dc2626;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;">Review Voucher &rarr;</a>
+                            </div>
+                          </div>
+                          <div style="background:#f8fafc;padding:14px;text-align:center;border-top:1px solid #e2e8f0;">
+                            <p style="color:#94a3b8;font-size:11px;margin:0;">Civentral AI Anomaly Detection &bull; Caloocan City Treasury</p>
+                          </div>
+                        </div>';
+                        sendSystemEmail(
+                            'balcogodwin5@gmail.com',
+                            'Head of Treasury',
+                            '⚠️ [AI ALERT] Suspicious Disbursement ₱'.number_format($amount,2).' — Review Required',
+                            $emailBodyAI
+                        );
+                    }
+                }
+            } catch (\Throwable $aiEx) {
+                error_log('AI anomaly check failed: ' . $aiEx->getMessage());
+            }
+
             $successMsg = 'Voucher submitted for release.';
+
         } elseif (($_POST['action'] ?? '') === 'release_voucher') {
           if (!$treasuryService->verifyReleaseCode((string) ($_POST['release_code'] ?? ''))) {
             throw new Exception('Invalid release confirmation code.');

@@ -81,6 +81,26 @@ foreach ($allCollections as $c) {
 $trendLabels = array_column(array_values($monthlyTrend), 'label');   // JS array
 $trendTotals = array_column(array_values($monthlyTrend), 'total');    // JS array
 
+// ── AI Predictive Analytics (Linear Regression) ──────────────────
+$n = count($trendTotals);
+$sumX = 0; $sumY = 0; $sumXY = 0; $sumXX = 0;
+for ($i = 0; $i < $n; $i++) {
+    $x = $i;
+    $y = $trendTotals[$i];
+    $sumX += $x;
+    $sumY += $y;
+    $sumXY += ($x * $y);
+    $sumXX += ($x * $x);
+}
+if ($n * $sumXX - $sumX * $sumX == 0) {
+    $m = 0; // Avoid division by zero if all x are same
+} else {
+    $m = ($n * $sumXY - $sumX * $sumY) / ($n * $sumXX - $sumX * $sumX);
+}
+$b = ($sumY - $m * $sumX) / $n;
+$predictedNextMonth = $m * 12 + $b; // Predict next month (index 12)
+if ($predictedNextMonth < 0) $predictedNextMonth = 0;
+
 // ── Alert computations ───────────────────────────────────────────
 $alerts = [];
 
@@ -111,6 +131,74 @@ if (count($pendingBudgetRequests)) {
     $alerts[] = ['level'=>'info','icon'=>'fa-file-circle-question',
         'msg'=>'<strong>'.$n.' budget request'.($n>1?'s':'').'</strong> awaiting approval — '.$treasuryService->formatPeso($pendingBudgetTotal).' total.',
         'link'=>['href'=>'budget-approvals.php','label'=>'Review →']];
+}
+
+// ── AI Anomaly Detection ──────────────────────────────────────────
+$releasedVouchers = array_filter($vouchers, fn($v) => strtolower($v['status'] ?? '') === 'disbursed');
+$anomalyAlerts = [];
+if (count($releasedVouchers) >= 3) {
+    $voucherAmounts = array_column(array_values($releasedVouchers), 'amount');
+    $avgDisbursement = array_sum($voucherAmounts) / count($voucherAmounts);
+    $anomalyThreshold = $avgDisbursement * 3;
+    foreach ($pendingVouchers as $v) {
+        $vAmount = (float)($v['amount'] ?? 0);
+        if ($vAmount > $anomalyThreshold && $anomalyThreshold > 0) {
+            $payeeName = htmlspecialchars($v['payee'] ?? 'Unknown Payee');
+            $anomalyAlerts[] = ['payee'=>$payeeName,'amount'=>$vAmount,'avg'=>$avgDisbursement];
+            $alerts[] = [
+                'level' => 'danger',
+                'icon'  => 'fa-robot',
+                'msg'   => '🤖 <strong>AI Anomaly Detected!</strong> Voucher for <strong>'.$payeeName.'</strong> ('.$treasuryService->formatPeso($vAmount).') is <strong>'.round($vAmount/$avgDisbursement,1).'x</strong> higher than the historical average ('.$treasuryService->formatPeso($avgDisbursement).'). Manual review recommended.',
+                'link'  => ['href'=>'disbursement.php','label'=>'Investigate →'],
+            ];
+        }
+    }
+    // Send email alert once per day if anomalies found
+    if (!empty($anomalyAlerts) && !isset($_SESSION['anomaly_email_sent_'.date('Y-m-d')])) {
+        try {
+            require_once __DIR__ . '/../../config/mailer.php';
+            $rows = '';
+            foreach ($anomalyAlerts as $a) {
+                $risk = round($a['amount'] / $a['avg'], 1);
+                $rows .= '<tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 12px;color:#1e293b;">'.$a['payee'].'</td>
+                    <td style="padding:10px 12px;text-align:right;color:#dc2626;font-weight:bold;">&#8369;'.number_format($a['amount'],2).'</td>
+                    <td style="padding:10px 12px;text-align:right;"><span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:999px;font-weight:bold;">'.$risk.'x avg</span></td>
+                  </tr>';
+            }
+            $emailBody = '
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#1e293b,#0f172a);padding:28px 32px;text-align:center;">
+                <h1 style="color:#f1f5f9;font-size:20px;margin:0;letter-spacing:1px;">&#9888;&#65039; CIVENTRAL AI SECURITY ALERT</h1>
+                <p style="color:#94a3b8;font-size:12px;margin:8px 0 0;">Automated Anomaly Detection System</p>
+              </div>
+              <div style="padding:28px 32px;background:#fff;">
+                <p style="color:#1e293b;font-size:15px;font-weight:bold;">Dear Head of Treasury,</p>
+                <p style="color:#475569;font-size:14px;">The Civentral AI system has detected <strong style="color:#dc2626;">'.count($anomalyAlerts).' suspicious disbursement voucher(s)</strong> that require your immediate attention:</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;">
+                  <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+                    <th style="text-align:left;padding:10px 12px;color:#64748b;">PAYEE</th>
+                    <th style="text-align:right;padding:10px 12px;color:#64748b;">AMOUNT</th>
+                    <th style="text-align:right;padding:10px 12px;color:#64748b;">RISK</th>
+                  </tr></thead>
+                  <tbody>'.$rows.'</tbody>
+                </table>
+                <p style="color:#475569;font-size:13px;">Historical average disbursement: <strong>&#8369;'.number_format($avgDisbursement,2).'</strong></p>
+                <p style="color:#475569;font-size:13px;">Please log in to the Treasury Portal immediately to review and verify these vouchers before releasing any funds.</p>
+                <div style="text-align:center;margin:24px 0;">
+                  <a href="https://civentral.tech/pages/treasury/disbursement.php" style="background:#dc2626;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">Review Suspicious Vouchers &rarr;</a>
+                </div>
+              </div>
+              <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;">
+                <p style="color:#94a3b8;font-size:11px;margin:0;">This is an automated security alert from the Civentral AI Anomaly Detection System.<br>Caloocan City Treasury Portal</p>
+              </div>
+            </div>';
+            sendSystemEmail('balcogodwin5@gmail.com','Head of Treasury','⚠️ [AI ALERT] Suspicious Disbursement Detected — Civentral Treasury',$emailBody);
+            $_SESSION['anomaly_email_sent_'.date('Y-m-d')] = true;
+        } catch (\Throwable $e) {
+            error_log('Anomaly email failed: '.$e->getMessage());
+        }
+    }
 }
 
 $basePath = '../../';
@@ -166,7 +254,7 @@ include __DIR__ . '/../../includes/sidebar.php';
       </div>
       <?php endif; ?>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
         <!-- Today's Collections -->
         <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between group relative overflow-hidden">
           <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
@@ -245,6 +333,21 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
           <div class="h-10 w-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-slate-100 transition">
             <i class="fa-solid fa-receipt text-sm"></i>
+          </div>
+        </div>
+
+        <!-- AI Revenue Forecast -->
+        <div class="bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl p-5 shadow-xs flex items-center justify-between group relative overflow-hidden">
+          <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+          <div class="space-y-1">
+            <span class="text-[10px] font-black uppercase tracking-wider text-indigo-500 dark:text-indigo-400 block flex items-center gap-1">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> AI Forecast
+            </span>
+            <h3 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight"><?= $treasuryService->formatPeso($predictedNextMonth) ?></h3>
+            <p class="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">Predicted next month</p>
+          </div>
+          <div class="h-10 w-10 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-100 transition">
+            <i class="fa-solid fa-brain text-sm"></i>
           </div>
         </div>
       </div>
