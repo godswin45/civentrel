@@ -193,7 +193,7 @@ if (count($releasedVouchers) >= 3) {
                 <p style="color:#94a3b8;font-size:11px;margin:0;">This is an automated security alert from the Civentral AI Anomaly Detection System.<br>Caloocan City Treasury Portal</p>
               </div>
             </div>';
-            sendSystemEmail('balcogodwin5@gmail.com','Head of Treasury','⚠️ [AI ALERT] Suspicious Disbursement Detected — Civentral Treasury',$emailBody);
+            sendSystemEmail('balcogodwin5@gmail.com','Head of Treasury','[AI ALERT] Suspicious Disbursement Detected - Civentral Treasury',$emailBody);
             $_SESSION['anomaly_email_sent_'.date('Y-m-d')] = true;
         } catch (\Throwable $e) {
             error_log('Anomaly email failed: '.$e->getMessage());

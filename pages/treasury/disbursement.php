@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         sendSystemEmail(
                             'balcogodwin5@gmail.com',
                             'Head of Treasury',
-                            '⚠️ [AI ALERT] Suspicious Disbursement ₱'.number_format($amount,2).' — Review Required',
+                            '[AI ALERT] Suspicious Disbursement PHP '.number_format($amount,2).' - Immediate Review Required',
                             $emailBodyAI
                         );
                     }
