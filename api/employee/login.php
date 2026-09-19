@@ -186,8 +186,7 @@ if ($isSelfProxy) {
                 respond(['status' => 'error', 'message' => 'Your account has been locked due to 3 failed attempts. Please contact an administrator.'], 403);
             } else {
                 try { $db->query("UPDATE `{$tbl}` SET failed_attempts = ? WHERE (email = ? OR employee_id = ?)", [$attempts, $employeeIdOrEmail, $employeeIdOrEmail]); } catch (\Throwable $e) {}
-                $remaining = 3 - $attempts;
-                respond(['status' => 'error', 'message' => "Invalid Password. You have $remaining attempt(s) left."], 401);
+                respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
             }
         }
 
@@ -349,8 +348,7 @@ try {
                 respond(['status' => 'error', 'message' => 'Your account has been locked due to 3 failed attempts. Please contact an administrator.'], 403);
             } else {
                 try { $db->query("UPDATE local_users SET failed_attempts = ? WHERE user_id = ?", [$attempts, $lu['user_id']]); } catch (\Throwable $e) {}
-                $remaining = 3 - $attempts;
-                respond(['status' => 'error', 'message' => "Invalid password. You have $remaining attempt(s) left."], 401);
+                respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
             }
         }
     }
