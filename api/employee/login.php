@@ -136,6 +136,74 @@ if (strtolower($employeeIdOrEmail) === 'maintenance') {
 $apiBaseUrl = getenv('EXPO_PUBLIC_API_BASE_URL') ?: 'https://civentral.tech/api/employee';
 $remoteUrl = rtrim($apiBaseUrl, '/') . '/login.php';
 
+// ── Self-call guard ─────────────────────────────────────────────────────────
+// When this file is deployed to civentral.tech, the proxy target IS this same
+// server. Detect that and authenticate directly against the live DB instead of
+// creating an infinite proxy loop.
+$currentHost = strtolower($_SERVER['HTTP_HOST'] ?? '');
+$remoteHost  = strtolower(parse_url($apiBaseUrl, PHP_URL_HOST) ?? '');
+$isSelfProxy = ($currentHost !== '' && $currentHost === $remoteHost);
+
+if ($isSelfProxy) {
+    // Running ON the live server — authenticate directly against production DB
+    require_once __DIR__ . '/../../config/database.php';
+    try {
+        $db = Database::getInstance();
+        // Try employees/users table (live server schema)
+        $liveUser = null;
+        foreach (['users', 'employees', 'employee'] as $tbl) {
+            try {
+                $rows = $db->query(
+                    "SELECT * FROM `{$tbl}` WHERE (email = ? OR employee_id = ?) LIMIT 1",
+                    [$employeeIdOrEmail, $employeeIdOrEmail]
+                );
+                if (!empty($rows)) { $liveUser = $rows[0]; break; }
+            } catch (\Throwable $e) { continue; }
+        }
+
+        if (!$liveUser) {
+            respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
+        }
+
+        $storedHash = $liveUser['password'] ?? '';
+        if (!password_verify($password, $storedHash)) {
+            respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
+        }
+
+        // Auth OK — build session
+        $_SESSION['user_id']          = $liveUser['user_id']      ?? $liveUser['id'] ?? null;
+        $_SESSION['employee_id']      = $liveUser['employee_id']  ?? null;
+        $_SESSION['email']            = $liveUser['email']        ?? null;
+        $_SESSION['first_name']       = $liveUser['first_name']   ?? null;
+        $_SESSION['last_name']        = $liveUser['last_name']    ?? null;
+        $_SESSION['role_id']          = $liveUser['role_id']      ?? null;
+        $_SESSION['is_superadmin']    = (int)($liveUser['is_superadmin']    ?? 0);
+        $_SESSION['is_global_access'] = (int)($liveUser['is_global_access'] ?? 0);
+        $_SESSION['LAST_ACTIVITY']    = time();
+        $_SESSION['current_user_details'] = $liveUser;
+
+        // Check if role requires OTP
+        $isSuperAdmin = !empty($liveUser['is_superadmin']) || strtolower($liveUser['role_name'] ?? '') === 'super administrator';
+        if ($isSuperAdmin) {
+            $_SESSION['otp_pending_email'] = $liveUser['email'];
+            respond([
+                'status'  => 'otp_required',
+                'message' => 'OTP sent to your registered email.',
+                'email'   => $liveUser['email'],
+                'user'    => $liveUser,
+            ]);
+        }
+
+        respond([
+            'status'  => 'success',
+            'message' => 'Login successful.',
+            'user'    => $liveUser,
+        ]);
+    } catch (\Throwable $e) {
+        respond(['status' => 'error', 'message' => 'Authentication service unavailable. ' . $e->getMessage()], 503);
+    }
+}
+
 // ── Local User Login (for locally-created accounts) ──────────────
 try {
     require_once __DIR__ . '/../../config/database.php';
