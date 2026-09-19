@@ -53,14 +53,36 @@ if ($method !== 'POST') {
 $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
 $otpCode = trim($input['otp'] ?? $input['otp_code'] ?? '');
 
-
 if (empty($otpCode)) {
     respond([
-        'status' => 'error',
+        'status'  => 'error',
         'message' => 'Please enter a valid 6-digit verification code.'
     ], 400);
 }
 
+// ── Local OTP verification (for staff accounts) ───────────────────────────
+// When login.php generated a local OTP (source:'local'), verify it here.
+if (!empty($_SESSION['local_otp_code'])) {
+    $storedOtp   = $_SESSION['local_otp_code'];
+    $otpExpires  = $_SESSION['local_otp_expires'] ?? 0;
+
+    if (time() > $otpExpires) {
+        unset($_SESSION['local_otp_code'], $_SESSION['local_otp_expires']);
+        respond(['status' => 'error', 'message' => 'Verification code has expired. Please log in again.'], 401);
+    }
+
+    if ($otpCode !== $storedOtp) {
+        respond(['status' => 'error', 'message' => 'Invalid verification code. Please try again.'], 401);
+    }
+
+    // OTP is correct — clean up and confirm session is active
+    unset($_SESSION['local_otp_code'], $_SESSION['local_otp_expires'], $_SESSION['otp_pending_email']);
+    $_SESSION['LAST_ACTIVITY'] = time();
+
+    respond(['status' => 'success', 'message' => 'Login verified successfully.']);
+}
+
+// ── Live server OTP verification (for Super Admin accounts) ──────────────
 $apiBaseUrl = getenv('EXPO_PUBLIC_API_BASE_URL') ?: 'https://civentral.tech/api/employee';
 $remoteUrl = rtrim($apiBaseUrl, '/') . '/verify-otp.php';
 
@@ -70,15 +92,16 @@ $result = proxyRequest($remoteUrl, 'POST', [
 
 if (isset($result['body']['status']) && $result['body']['status'] === 'success') {
     $user = $result['body']['user'] ?? [];
-    $_SESSION['user_id'] = $user['user_id'] ?? null;
-    $_SESSION['employee_id'] = $user['employee_id'] ?? null;
-    $_SESSION['email'] = $user['email'] ?? ($user['employee_id'] ?? null);
-    $_SESSION['first_name'] = $user['first_name'] ?? null;
-    $_SESSION['last_name'] = $user['last_name'] ?? null;
-    $_SESSION['role_id'] = $user['role_id'] ?? null;
+    $_SESSION['user_id']      = $user['user_id']     ?? null;
+    $_SESSION['employee_id']  = $user['employee_id'] ?? null;
+    $_SESSION['email']        = $user['email']        ?? ($user['employee_id'] ?? null);
+    $_SESSION['first_name']   = $user['first_name']  ?? null;
+    $_SESSION['last_name']    = $user['last_name']   ?? null;
+    $_SESSION['role_id']      = $user['role_id']     ?? null;
+    $_SESSION['LAST_ACTIVITY'] = time();
 
     // Fetch full profile details from get-profile.php
-    $profileUrl = rtrim($apiBaseUrl, '/') . '/get-profile.php';
+    $profileUrl    = rtrim($apiBaseUrl, '/') . '/get-profile.php';
     $profileResult = proxyRequest($profileUrl, 'GET', null);
     if (isset($profileResult['body']['status']) && $profileResult['body']['status'] === 'success') {
         $_SESSION['current_user_details'] = $profileResult['body']['data'];

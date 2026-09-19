@@ -30,7 +30,16 @@ class SessionTimeout
         }
 
         if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $this->timeoutDuration) {
-            header('Location: ' . $this->basePath . 'pages/logout.php');
+            // Build absolute logout URL so it always resolves correctly regardless of page depth
+            $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+            // Find the app root (e.g. /civentrel/) by walking up to the project folder
+            $appRoot = '/';
+            if (preg_match('#^(/[^/]+/civentrel)/#', $scriptName, $m)) {
+                $appRoot = $m[1] . '/';
+            } elseif (preg_match('#^(/civentrel)/#', $scriptName, $m)) {
+                $appRoot = $m[1] . '/';
+            }
+            header('Location: ' . $appRoot . 'pages/logout.php');
             exit;
         }
 

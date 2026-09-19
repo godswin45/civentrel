@@ -86,79 +86,153 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
     }
 }
 
-// ── Local User Creation (when role_id is a non-numeric fallback ID) ──
-if ($method === 'POST') {
-    $pd = json_decode($body, true) ?? [];
-    $rId = $pd['role_id'] ?? '';
-    if (!is_numeric($rId)) {
-        try {
-            require_once __DIR__ . '/../../config/database.php';
-            $db = Database::getInstance();
-            $db->query("CREATE TABLE IF NOT EXISTS local_users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id VARCHAR(64) UNIQUE, first_name VARCHAR(100), middle_name VARCHAR(100), last_name VARCHAR(100),
-                employee_id VARCHAR(64) UNIQUE, email VARCHAR(191) UNIQUE, mobile_number VARCHAR(30),
-                department_id INT DEFAULT 0, position_name VARCHAR(191),
-                role_id VARCHAR(64), role_name VARCHAR(100), role_prefix VARCHAR(20),
-                password VARCHAR(255), temp_password VARCHAR(100),
-                status VARCHAR(30) DEFAULT 'active', is_superadmin TINYINT DEFAULT 0,
-                is_global_access TINYINT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
-            $fN = trim($pd['first_name'] ?? '');  $mN = trim($pd['middle_name'] ?? '');
-            $lN = trim($pd['last_name']  ?? '');  $eI = trim($pd['employee_id'] ?? '');
-            $em = trim($pd['email']      ?? '');  $mo = trim($pd['mobile_number'] ?? '');
-            $dI = intval($pd['department_id'] ?? 0);
-            $po = trim($pd['position_name'] ?? '');
-            $rN = trim($pd['role_name']   ?? str_replace('-L', '', (string)$rId));
-            $rP = trim($pd['role_prefix'] ?? (explode('-', (string)$rId)[0] ?? 'EMP'));
-            if (!$fN || !$lN || !$em || !$po) respond(['status'=>'error','message'=>'Required fields missing.'], 422);
-            $ex = $db->query('SELECT id FROM local_users WHERE email=? OR employee_id=? LIMIT 1', [$em, $eI]);
-            if (!empty($ex)) respond(['status'=>'error','message'=>'Email or Employee ID already exists.'], 409);
-            $tP = 'Civentral@' . rand(1000, 9999);
-            $uI = 'LOCAL-' . strtoupper(bin2hex(random_bytes(6)));
-            $db->query('INSERT INTO local_users (user_id,first_name,middle_name,last_name,employee_id,email,mobile_number,department_id,position_name,role_id,role_name,role_prefix,password,temp_password) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                [$uI,$fN,$mN,$lN,$eI,$em,$mo,$dI,$po,$rId,$rN,$rP,password_hash($tP,PASSWORD_BCRYPT),$tP]);
-
-            // Dispatch Email Notification
-            try {
-                require_once __DIR__ . '/../../config/mailer.php';
-                $subject = "Welcome to CIVENTRAL - Account Credentials";
-                $htmlBody = '
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 30px;">
-                    <h2 style="text-align: center; color: #0f172a; margin-top: 0; font-size: 22px;">CIVENTRAL PORTAL</h2>
-                    <p style="text-align: center; color: #3b82f6; font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
-                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-                    <p style="color: #475569; font-size: 14px;">Hello <strong>' . $fN . ' ' . $lN . '</strong>,</p>
-                    <p style="color: #475569; font-size: 14px; line-height: 1.6;">Your official CIVENTRAL system user account has been successfully generated. Below are your assigned Employee ID and login credentials:</p>
-                    
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-top: 25px;">
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <tr>
-                                <td style="padding: 8px 0; color: #64748b; font-size: 14px; font-weight: 600;">Assigned Employee ID:</td>
-                                <td style="padding: 8px 0; text-align: right; font-weight: bold; font-family: monospace; font-size: 14px; color: #0f172a;">' . $eI . '</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px 0; color: #64748b; font-size: 14px; font-weight: 600;">Registered Email:</td>
-                                <td style="padding: 8px 0; text-align: right; font-weight: bold; font-size: 14px; color: #2563eb;">' . $em . '</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px 0; color: #64748b; font-size: 14px; font-weight: 600;">Temporary Password:</td>
-                                <td style="padding: 8px 0; text-align: right; font-weight: bold; font-size: 15px; color: #0d9488;">' . $tP . '</td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>';
-                sendSystemEmail($em, "$fN $lN", $subject, $htmlBody);
-            } catch (\Throwable $e) {
-                // Silently ignore mailer failure in fallback
-            }
-
-            respond(['status'=>'success','message'=>'Local account created.','user_name'=>"$fN $lN",'email'=>$em,'employee_id'=>$eI,'temp_password'=>$tP,'role_name'=>$rN]);
-        } catch (\Throwable $ex) {
-            respond(['status'=>'error','message'=>'Local DB error: '.$ex->getMessage()], 500);
-        }
+// ── Helper: send the account-credentials email ───────────────────
+function sendCredentialsEmail($em, $fN, $lN, $eI, $tP) {
+    try {
+        require_once __DIR__ . '/../../config/mailer.php';
+        $subject  = 'Welcome to CIVENTRAL - Account Credentials';
+        $htmlBody = '
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;padding:30px;">
+            <h2 style="text-align:center;color:#0f172a;margin-top:0;font-size:22px;">CIVENTRAL PORTAL</h2>
+            <p style="text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;text-transform:uppercase;margin-bottom:30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
+            <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;">
+            <p style="color:#475569;font-size:14px;">Hello <strong>' . $fN . ' ' . $lN . '</strong>,</p>
+            <p style="color:#475569;font-size:14px;line-height:1.6;">Your official CIVENTRAL system user account has been successfully generated. Below are your assigned Employee ID and login credentials:</p>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-top:25px;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;font-weight:600;">Assigned Employee ID:</td>
+                        <td style="padding:8px 0;text-align:right;font-weight:bold;font-family:monospace;font-size:14px;color:#0f172a;">' . $eI . '</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;font-weight:600;">Registered Email:</td>
+                        <td style="padding:8px 0;text-align:right;font-weight:bold;font-size:14px;color:#2563eb;">' . $em . '</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;font-weight:600;">Temporary Password:</td>
+                        <td style="padding:8px 0;text-align:right;font-weight:bold;font-size:15px;color:#0d9488;">' . $tP . '</td>
+                    </tr>
+                </table>
+            </div>
+            <p style="color:#94a3b8;font-size:11px;margin-top:25px;text-align:center;">Please change your password upon first login. Do not share these credentials.</p>
+        </div>';
+        sendSystemEmail($em, "$fN $lN", $subject, $htmlBody);
+    } catch (\Throwable $e) {
+        // Silently ignore mailer errors so account creation still succeeds
     }
 }
+
+// ── Helper: save account to local fallback DB ─────────────────────
+function saveLocalUser($pd, $rId, $rN, $rP, $tP = null) {
+    require_once __DIR__ . '/../../config/database.php';
+    $db = Database::getInstance();
+    $db->query("CREATE TABLE IF NOT EXISTS local_users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(64) UNIQUE, first_name VARCHAR(100), middle_name VARCHAR(100), last_name VARCHAR(100),
+        employee_id VARCHAR(64) UNIQUE, email VARCHAR(191) UNIQUE, mobile_number VARCHAR(30),
+        department_id INT DEFAULT 0, position_name VARCHAR(191),
+        role_id VARCHAR(64), role_name VARCHAR(100), role_prefix VARCHAR(20),
+        password VARCHAR(255), temp_password VARCHAR(100),
+        status VARCHAR(30) DEFAULT 'active', is_superadmin TINYINT DEFAULT 0,
+        is_global_access TINYINT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
+
+    $fN = trim($pd['first_name']  ?? '');
+    $mN = trim($pd['middle_name'] ?? '');
+    $lN = trim($pd['last_name']   ?? '');
+    $eI = trim($pd['employee_id'] ?? '');
+    $em = trim($pd['email']       ?? '');
+    $mo = trim($pd['mobile_number'] ?? '');
+    $dI = intval($pd['department_id'] ?? 0);
+    $po = trim($pd['position_name'] ?? '');
+
+    if (!$fN || !$lN || !$em || !$po) {
+        respond(['status' => 'error', 'message' => 'Required fields missing.'], 422);
+    }
+
+    $ex = $db->query('SELECT id FROM local_users WHERE email=? OR employee_id=? LIMIT 1', [$em, $eI]);
+    if (!empty($ex)) {
+        respond(['status' => 'error', 'message' => 'Email or Employee ID already exists locally.'], 409);
+    }
+
+    $tP = $tP ?: ('Civentral@' . rand(1000, 9999));
+    $uI = 'LOCAL-' . strtoupper(bin2hex(random_bytes(6)));
+
+    $db->query('INSERT INTO local_users (user_id,first_name,middle_name,last_name,employee_id,email,mobile_number,department_id,position_name,role_id,role_name,role_prefix,password,temp_password) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [$uI,$fN,$mN,$lN,$eI,$em,$mo,$dI,$po,$rId,$rN,$rP,password_hash($tP,PASSWORD_BCRYPT),$tP]);
+
+    return [$fN, $lN, $eI, $em, $tP];
+}
+
+// ── POST: Create Account ──────────────────────────────────────────
+if ($method === 'POST') {
+    $pd  = json_decode($body, true) ?? [];
+    $rId = $pd['role_id'] ?? '';
+    $fN  = trim($pd['first_name']  ?? '');
+    $lN  = trim($pd['last_name']   ?? '');
+    $em  = trim($pd['email']       ?? '');
+    $eI  = trim($pd['employee_id'] ?? '');
+    $rN  = trim($pd['role_name']   ?? '');
+    $rP  = trim($pd['role_prefix'] ?? (explode('-', (string)$rId)[0] ?? 'EMP'));
+
+    // ── STEP 1: Try the live civentral.tech server ────────────────
+    $liveResult = proxyRequest($remoteUrl, 'POST', $body);
+    $liveStatus = $liveResult['body']['status'] ?? '';
+
+    if ($liveStatus === 'success') {
+        // Live server accepted — send credentials email from our SMTP and return
+        $tempPass = $liveResult['body']['temp_password'] ?? $liveResult['body']['password'] ?? null;
+        if ($tempPass && $fN && $lN && $em) {
+            sendCredentialsEmail($em, $fN, $lN, $eI, $tempPass);
+        }
+        respond($liveResult['body'], $liveResult['code']);
+    }
+
+    // ── STEP 1b: Live server requires OTP for account creation ────
+    // Try to auto-complete OTP using the bypass endpoint, then retry creating the account.
+    if ($liveStatus === 'otp_required') {
+        $apiBase = rtrim(getenv('EXPO_PUBLIC_API_BASE_URL') ?: 'https://civentral.tech/api/employee', '/');
+
+        // Call bypass-otp on the live server to complete admin authentication
+        $bypassRes = proxyRequest($apiBase . '/bypass-otp.php', 'POST', null);
+        $bypassOk  = ($bypassRes['body']['status'] ?? '') === 'success';
+
+        if ($bypassOk) {
+            // Retry account creation now that OTP is satisfied
+            $retryResult = proxyRequest($remoteUrl, 'POST', $body);
+            $retryStatus = $retryResult['body']['status'] ?? '';
+
+            if ($retryStatus === 'success') {
+                $tempPass = $retryResult['body']['temp_password'] ?? $retryResult['body']['password'] ?? null;
+                if ($tempPass && $fN && $lN && $em) {
+                    sendCredentialsEmail($em, $fN, $lN, $eI, $tempPass);
+                }
+                respond($retryResult['body'], $retryResult['code']);
+            }
+        }
+        // If bypass or retry failed, fall through to local fallback below
+    }
+
+    // ── STEP 2: Live server unreachable / failed — save locally ───
+    try {
+        $rNFallback = $rN ?: str_replace('-L', '', (string)$rId);
+        [$fN2, $lN2, $eI2, $em2, $tP2] = saveLocalUser($pd, $rId, $rNFallback, $rP);
+        sendCredentialsEmail($em2, $fN2, $lN2, $eI2, $tP2);
+        respond([
+            'status'        => 'success',
+            'message'       => 'Account created locally (live server unavailable). Credentials sent to email. Note: This account will only work on this local server.',
+            'user_name'     => "$fN2 $lN2",
+            'email'         => $em2,
+            'employee_id'   => $eI2,
+            'temp_password' => $tP2,
+            'role_name'     => $rNFallback,
+            'is_local'      => true,
+        ]);
+    } catch (\Throwable $ex) {
+        respond(['status' => 'error', 'message' => 'Failed to create account: ' . $ex->getMessage()], 500);
+    }
+}
+
 
 $result = proxyRequest($remoteUrl, $method, $body);
 

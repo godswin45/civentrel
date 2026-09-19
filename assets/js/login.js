@@ -1,6 +1,7 @@
 // BYPASS_OTP is read from the form's data-bypass-otp attribute (set by PHP from .env).
 // To toggle: set BYPASS_OTP=true or BYPASS_OTP=false in your .env file.
-const BYPASS_OTP = document.getElementById('loginForm')?.dataset?.bypassOtp !== 'false';
+// Defaults to FALSE (OTP required) if the attribute is missing or unreadable.
+const BYPASS_OTP = document.getElementById('loginForm')?.dataset?.bypassOtp === 'true';
 
 function togglePasswordVisibility() {
   const passwordInput = document.getElementById('password');

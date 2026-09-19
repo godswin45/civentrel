@@ -1,6 +1,18 @@
 <?php
 // Prevent session lock issues during long DB queries
 if (session_status() === PHP_SESSION_NONE) {
+    // Scope the session cookie to the app root so it is shared across
+    // /api/, /pages/, etc. — not just the current subdirectory.
+    $cookiePath = '/';
+    if (!empty($_SERVER['SCRIPT_NAME'])) {
+        // Detect the app root e.g. "/civentrel/"
+        if (preg_match('#^(/[^/]+/civentrel)/#', $_SERVER['SCRIPT_NAME'], $m)) {
+            $cookiePath = $m[1] . '/';
+        } elseif (preg_match('#^(/civentrel)/#', $_SERVER['SCRIPT_NAME'], $m)) {
+            $cookiePath = $m[1] . '/';
+        }
+    }
+    session_set_cookie_params(['path' => $cookiePath, 'httponly' => true, 'samesite' => 'Lax']);
     session_start();
 }
 
@@ -148,6 +160,24 @@ try {
             $_SESSION['is_superadmin']  = (int)$lu['is_superadmin'];
             $_SESSION['is_global_access'] = (int)$lu['is_global_access'];
             $_SESSION['LAST_ACTIVITY']  = time();
+            // Cache user details so HeaderService shows real name without remote API call
+            $_SESSION['current_user_details'] = [
+                'user_id'        => $lu['user_id'],
+                'employee_id'    => $lu['employee_id'],
+                'first_name'     => $lu['first_name'],
+                'middle_name'    => $lu['middle_name'] ?? '',
+                'last_name'      => $lu['last_name'],
+                'email'          => $lu['email'],
+                'mobile_number'  => $lu['mobile_number'] ?? '',
+                'role_id'        => $lu['role_id'],
+                'role_name'      => $lu['role_name'],
+                'role_prefix'    => $lu['role_prefix'],
+                'department_id'  => $lu['department_id'],
+                'position_name'  => $lu['position_name'] ?? '',
+                'is_superadmin'  => (int)$lu['is_superadmin'],
+                'is_global_access' => (int)$lu['is_global_access'],
+                'profile_picture'=> $lu['profile_picture'] ?? 'default-avatar.png',
+            ];
             respond([
                 'status' => 'success',
                 'message' => 'Login successful.',
@@ -183,25 +213,89 @@ $result = proxyRequest($remoteUrl, 'POST', [
 
 $body = $result['body'] ?? [];
 
-// Populate session for both 'success' and 'otp_required' statuses.
-// On 'otp_required' the remote API already validated credentials and returns
-// the same user payload — we need the session set so that bypassing OTP in
-// the frontend still results in a valid session on the dashboard.
 $bodyStatus = $body['status'] ?? null;
 if (in_array($bodyStatus, ['success', 'otp_required'], true) && is_array($body)) {
     $user = $body['user'] ?? $body['data'] ?? [];
     if (!empty($user) && is_array($user)) {
-        $_SESSION['user_id']     = $user['user_id']     ?? $_SESSION['user_id']     ?? null;
-        $_SESSION['employee_id'] = $user['employee_id'] ?? $_SESSION['employee_id'] ?? null;
-        $_SESSION['email']       = $user['email']       ?? $_SESSION['email']       ?? null;
-        $_SESSION['first_name']  = $user['first_name']  ?? $_SESSION['first_name']  ?? null;
-        $_SESSION['last_name']   = $user['last_name']   ?? $_SESSION['last_name']   ?? null;
-        $_SESSION['role_id']     = $user['role_id']     ?? $_SESSION['role_id']     ?? null;
+        $_SESSION['user_id']      = $user['user_id']     ?? $_SESSION['user_id']     ?? null;
+        $_SESSION['employee_id']  = $user['employee_id'] ?? $_SESSION['employee_id'] ?? null;
+        $_SESSION['email']        = $user['email']       ?? $_SESSION['email']       ?? null;
+        $_SESSION['first_name']   = $user['first_name']  ?? $_SESSION['first_name']  ?? null;
+        $_SESSION['last_name']    = $user['last_name']   ?? $_SESSION['last_name']   ?? null;
+        $_SESSION['role_id']      = $user['role_id']     ?? $_SESSION['role_id']     ?? null;
+        $_SESSION['role_name']    = $user['role_name']   ?? $_SESSION['role_name']   ?? null;
+        $_SESSION['role_prefix']  = $user['role_prefix'] ?? $_SESSION['role_prefix'] ?? null;
+        $_SESSION['is_superadmin']    = $user['is_superadmin']    ?? $_SESSION['is_superadmin']    ?? 0;
+        $_SESSION['is_global_access'] = $user['is_global_access'] ?? $_SESSION['is_global_access'] ?? 0;
         $_SESSION['LAST_ACTIVITY'] = time();
+
+        // Cache user details so HeaderService shows real name after OTP
+        $_SESSION['current_user_details'] = [
+            'user_id'          => $user['user_id']          ?? null,
+            'employee_id'      => $user['employee_id']      ?? null,
+            'first_name'       => $user['first_name']       ?? '',
+            'middle_name'      => $user['middle_name']      ?? '',
+            'last_name'        => $user['last_name']        ?? '',
+            'email'            => $user['email']            ?? '',
+            'mobile_number'    => $user['mobile_number']    ?? '',
+            'role_id'          => $user['role_id']          ?? null,
+            'role_name'        => $user['role_name']        ?? 'Staff',
+            'role_prefix'      => $user['role_prefix']      ?? 'STF',
+            'department_id'    => $user['department_id']    ?? null,
+            'department_name'  => $user['department_name']  ?? '',
+            'position_name'    => $user['position_name'] ?? ($user['position'] ?? ''),
+            'is_superadmin'    => $user['is_superadmin']    ?? 0,
+            'is_global_access' => $user['is_global_access'] ?? 0,
+            'profile_picture'  => $user['profile_picture']  ?? 'default-avatar.png',
+        ];
     }
 
-    // Stash email for the OTP bypass endpoint fallback (dev mode).
-    // The otp_required response always includes the email even when no user object is present.
+    // ── LOCAL OTP ENFORCEMENT ─────────────────────────────────────────────
+    // If the live server returned 'success' directly (skipped OTP for staff),
+    // we enforce our own OTP step locally so ALL accounts require verification.
+    if ($bodyStatus === 'success') {
+        $recipientEmail = $_SESSION['email'] ?? ($user['email'] ?? null);
+        $firstName      = $_SESSION['first_name'] ?? ($user['first_name'] ?? 'User');
+        $lastName       = $_SESSION['last_name']  ?? ($user['last_name']  ?? '');
+
+        if (!empty($recipientEmail)) {
+            $localOtp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $_SESSION['local_otp_code']    = $localOtp;
+            $_SESSION['local_otp_expires'] = time() + 300; // 5 minutes
+            $_SESSION['otp_pending_email'] = $recipientEmail;
+
+            // Send OTP email via our SMTP
+            try {
+                require_once __DIR__ . '/../../config/mailer.php';
+                $subject  = 'CIVENTRAL - Your Login Verification Code';
+                $htmlBody = '
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;padding:30px;">
+                    <h2 style="text-align:center;color:#0f172a;margin-top:0;font-size:22px;">CIVENTRAL PORTAL</h2>
+                    <p style="text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;text-transform:uppercase;margin-bottom:30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
+                    <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;">
+                    <p style="color:#475569;font-size:14px;">Hello <strong>' . $firstName . ' ' . $lastName . '</strong>,</p>
+                    <p style="color:#475569;font-size:14px;line-height:1.6;">Your two-factor authentication code for CIVENTRAL Portal login is:</p>
+                    <div style="text-align:center;margin:25px 0;">
+                        <span style="font-size:42px;font-weight:900;font-family:monospace;letter-spacing:12px;color:#0f172a;background:#f8fafc;padding:16px 24px;border-radius:12px;border:2px solid #e2e8f0;display:inline-block;">' . $localOtp . '</span>
+                    </div>
+                    <p style="color:#94a3b8;font-size:12px;text-align:center;">This code expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
+                </div>';
+                sendSystemEmail($recipientEmail, "$firstName $lastName", $subject, $htmlBody);
+            } catch (\Throwable $e) {
+                // Mailer failure — still continue so account isn't locked out
+            }
+
+            // Return otp_required to browser so OTP modal opens
+            respond([
+                'status'  => 'otp_required',
+                'message' => 'A verification code has been sent to your email.',
+                'email'   => $recipientEmail,
+                'source'  => 'local',
+            ]);
+        }
+    }
+
+    // Live server already returned otp_required — stash email for bypass endpoint
     if ($bodyStatus === 'otp_required' && !empty($body['email'])) {
         $_SESSION['otp_pending_email'] = $body['email'];
     }

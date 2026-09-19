@@ -65,11 +65,19 @@ if (!empty($_SESSION['remote_phpsessid'])) {
     }
 }
 
-// ── Tier 2: Fallback — use the email stashed during login ────────────────────
+// ── Tier 2: Fallback — use session data stashed during login ─────
 if (!$sessionEstablished) {
     $pendingEmail = $_SESSION['otp_pending_email'] ?? null;
+    $firstName    = $_SESSION['first_name']  ?? null;
+    $lastName     = $_SESSION['last_name']   ?? null;
+    $empId        = $_SESSION['employee_id'] ?? $pendingEmail;
+    $userId       = $_SESSION['user_id']     ?? $pendingEmail;
+    $roleId       = $_SESSION['role_id']     ?? 1;
+    $roleName     = $_SESSION['role_name']   ?? 'Super Administrator';
+    $rolePrefix   = $_SESSION['role_prefix'] ?? 'SADM';
+    $isSuperadmin = $_SESSION['is_superadmin'] ?? 1;
 
-    if (empty($pendingEmail)) {
+    if (empty($pendingEmail) && empty($empId)) {
         http_response_code(401);
         echo json_encode([
             'status'  => 'error',
@@ -78,27 +86,31 @@ if (!$sessionEstablished) {
         exit;
     }
 
-    // Build a minimal session. isLoggedIn() only needs employee_id or user_id
-    // to be non-empty. HeaderService falls back gracefully when profile is thin.
-    $_SESSION['employee_id']          = $pendingEmail;
-    $_SESSION['user_id']              = $pendingEmail;
-    $_SESSION['email']                = $pendingEmail;
-    $_SESSION['first_name']           = 'Dev';
-    $_SESSION['last_name']            = 'User';
-    $_SESSION['role_id']              = 1;
+    // Use real name if available, fallback to email prefix
+    if (!$firstName) {
+        $emailParts = explode('@', $pendingEmail ?? $empId);
+        $firstName  = ucfirst($emailParts[0] ?? 'Admin');
+        $lastName   = '';
+    }
+
+    $_SESSION['employee_id']          = $empId;
+    $_SESSION['user_id']              = $userId;
+    $_SESSION['email']                = $pendingEmail ?? $_SESSION['email'] ?? '';
+    $_SESSION['first_name']           = $firstName;
+    $_SESSION['last_name']            = $lastName;
+    $_SESSION['role_id']              = $roleId;
     $_SESSION['current_user_details'] = [
-        'employee_id'    => $pendingEmail,
-        'user_id'        => $pendingEmail,
-        'email'          => $pendingEmail,
-        'first_name'     => 'Dev',
-        'last_name'      => 'User',
-        'full_name'      => 'Dev User',
-        'initials'       => 'DU',
-        // These fields are read by HeaderService to set is_superadmin = true
-        'role_name'      => 'Super Administrator',
-        'role_prefix'    => 'SADM',
-        'is_superadmin'  => true,
-        'is_global_access' => true,
+        'employee_id'      => $empId,
+        'user_id'          => $userId,
+        'email'            => $pendingEmail ?? $_SESSION['email'] ?? '',
+        'first_name'       => $firstName,
+        'middle_name'      => $_SESSION['middle_name'] ?? '',
+        'last_name'        => $lastName,
+        'role_id'          => $roleId,
+        'role_name'        => $roleName,
+        'role_prefix'      => $rolePrefix,
+        'is_superadmin'    => $isSuperadmin,
+        'is_global_access' => $_SESSION['is_global_access'] ?? 1,
         'profile_picture'  => 'default-avatar.png',
     ];
     $_SESSION['LAST_ACTIVITY'] = time();

@@ -5,6 +5,17 @@ if (!ob_get_level()) {
 }
 
 if (session_status() === PHP_SESSION_NONE) {
+    // Scope the session cookie to the app root (e.g. /civentrel/) so it is
+    // shared between /api/ and /pages/ subdirectories.
+    $cookiePath = '/';
+    if (!empty($_SERVER['SCRIPT_NAME'])) {
+        if (preg_match('#^(/[^/]+/civentrel)/#', $_SERVER['SCRIPT_NAME'], $m)) {
+            $cookiePath = $m[1] . '/';
+        } elseif (preg_match('#^(/civentrel)/#', $_SERVER['SCRIPT_NAME'], $m)) {
+            $cookiePath = $m[1] . '/';
+        }
+    }
+    session_set_cookie_params(['path' => $cookiePath, 'httponly' => true, 'samesite' => 'Lax']);
     session_start();
 }
 
