@@ -62,9 +62,9 @@ async function handleCreateUser(e) {
   const empIdCode = empIdInput ? empIdInput.value.trim() : '';
   const emailVal = document.getElementById('email').value.trim();
   const mobileVal = document.getElementById('mobileNumber') ? document.getElementById('mobileNumber').value.trim() : '';
-  const deptId = parseInt(deptSelect.value) || (currentUserScope ? parseInt(currentUserScope.department_id) : 0);
+  const deptId = deptSelect ? (deptSelect.value || (currentUserScope ? currentUserScope.department_id : '')) : '';
   const positionTitle = posInput ? posInput.value.trim() : '';
-  const roleId = parseInt(roleSelect.value) || 0;
+  const roleId = roleSelect ? roleSelect.value : '';
 
   const roleOpt = roleSelect ? roleSelect.options[roleSelect.selectedIndex] : null;
   const roleName = roleOpt ? (roleOpt.dataset.name || 'User') : 'User';
