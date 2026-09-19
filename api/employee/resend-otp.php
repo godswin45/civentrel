@@ -54,6 +54,40 @@ if ($method !== 'POST') {
 $apiBaseUrl = getenv('EXPO_PUBLIC_API_BASE_URL') ?: 'https://civentral.tech/api/employee';
 $remoteUrl = rtrim($apiBaseUrl, '/') . '/resend-otp.php';
 
+// ── Local OTP Resend ────────────────────────────────────────────────────────
+// If login.php generated a local OTP, resend it locally instead of proxying.
+if (!empty($_SESSION['otp_pending_email'])) {
+    $recipientEmail = $_SESSION['otp_pending_email'];
+    $firstName      = $_SESSION['first_name'] ?? 'User';
+    $lastName       = $_SESSION['last_name']  ?? '';
+
+    $localOtp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+    $_SESSION['local_otp_code']    = $localOtp;
+    $_SESSION['local_otp_expires'] = time() + 300;
+
+    try {
+        require_once __DIR__ . '/../../config/mailer.php';
+        $subject  = 'CIVENTRAL - Your Login Verification Code (Resent)';
+        $htmlBody = '
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;padding:30px;">
+            <h2 style="text-align:center;color:#0f172a;margin-top:0;font-size:22px;">CIVENTRAL PORTAL</h2>
+            <p style="text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;text-transform:uppercase;margin-bottom:30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
+            <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;">
+            <p style="color:#475569;font-size:14px;">Hello <strong>' . $firstName . ' ' . $lastName . '</strong>,</p>
+            <p style="color:#475569;font-size:14px;line-height:1.6;">Your requested new two-factor authentication code for CIVENTRAL Portal login is:</p>
+            <div style="text-align:center;margin:25px 0;">
+                <span style="font-size:42px;font-weight:900;font-family:monospace;letter-spacing:12px;color:#0f172a;background:#f8fafc;padding:16px 24px;border-radius:12px;border:2px solid #e2e8f0;display:inline-block;">' . $localOtp . '</span>
+            </div>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">This code expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
+        </div>';
+        sendSystemEmail($recipientEmail, "$firstName $lastName", $subject, $htmlBody);
+        respond(['status' => 'success', 'message' => 'A new verification code has been sent.']);
+    } catch (\Throwable $e) {
+        respond(['status' => 'error', 'message' => 'Failed to resend code.'], 500);
+    }
+}
+
+// Fallback to proxying if no local OTP is pending
 $result = proxyRequest($remoteUrl, 'POST', null);
 
 respond($result['body'], $result['code']);
