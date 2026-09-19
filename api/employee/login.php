@@ -156,7 +156,7 @@ if ($isSelfProxy) {
         $db = Database::getInstance();
         // Try employees/users table (live server schema)
         $liveUser = null;
-        foreach (['users', 'employees', 'employee'] as $tbl) {
+        foreach (['users', 'employees', 'employee', 'local_users'] as $tbl) {
             try {
                 $rows = $db->query(
                     "SELECT * FROM `{$tbl}` WHERE (email = ? OR employee_id = ?) LIMIT 1",
