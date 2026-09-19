@@ -170,10 +170,33 @@ if ($isSelfProxy) {
             respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
         }
 
+        // Check if account is locked
+        if (isset($liveUser['status']) && $liveUser['status'] === 'locked') {
+            respond(['status' => 'error', 'message' => 'Your account has been locked due to too many failed attempts. Please contact an administrator.'], 403);
+        }
+
         $storedHash = $liveUser['password'] ?? '';
         if (!password_verify($password, $storedHash)) {
-            respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
+            // Track failed attempts
+            try { $db->query("ALTER TABLE `{$tbl}` ADD COLUMN `failed_attempts` INT DEFAULT 0"); } catch (\Throwable $e) {}
+            $attempts = (int)($liveUser['failed_attempts'] ?? 0) + 1;
+            
+            if ($attempts >= 3) {
+                try { $db->query("UPDATE `{$tbl}` SET status = 'locked', failed_attempts = ? WHERE (email = ? OR employee_id = ?)", [$attempts, $employeeIdOrEmail, $employeeIdOrEmail]); } catch (\Throwable $e) {}
+                respond(['status' => 'error', 'message' => 'Your account has been locked due to 3 failed attempts. Please contact an administrator.'], 403);
+            } else {
+                try { $db->query("UPDATE `{$tbl}` SET failed_attempts = ? WHERE (email = ? OR employee_id = ?)", [$attempts, $employeeIdOrEmail, $employeeIdOrEmail]); } catch (\Throwable $e) {}
+                $remaining = 3 - $attempts;
+                respond(['status' => 'error', 'message' => "Invalid Password. You have $remaining attempt(s) left."], 401);
+            }
         }
+
+        // Reset failed attempts on success
+        try {
+            if (isset($liveUser['failed_attempts']) && (int)$liveUser['failed_attempts'] > 0) {
+                $db->query("UPDATE `{$tbl}` SET failed_attempts = 0 WHERE (email = ? OR employee_id = ?)", [$employeeIdOrEmail, $employeeIdOrEmail]);
+            }
+        } catch (\Throwable $e) {}
 
         // Auth OK — build session
         $_SESSION['user_id']          = $liveUser['user_id']      ?? $liveUser['id'] ?? null;
@@ -245,12 +268,29 @@ try {
     require_once __DIR__ . '/../../config/database.php';
     $db = Database::getInstance();
     $localUser = $db->query(
-        "SELECT * FROM local_users WHERE (email = ? OR employee_id = ?) AND status = 'active' LIMIT 1",
+        "SELECT * FROM local_users WHERE (email = ? OR employee_id = ?) LIMIT 1",
         [$employeeIdOrEmail, $employeeIdOrEmail]
     );
     if (!empty($localUser)) {
         $lu = $localUser[0];
+        
+        // Check if account is locked
+        if (isset($lu['status']) && $lu['status'] === 'locked') {
+            respond(['status' => 'error', 'message' => 'Your account has been locked due to too many failed attempts. Please contact an administrator.'], 403);
+        }
+        
+        // Ensure status is active (if not locked, but pending etc)
+        if (isset($lu['status']) && $lu['status'] !== 'active' && $lu['status'] !== 'locked') {
+             respond(['status' => 'error', 'message' => 'Your account is not active.'], 403);
+        }
+
         if (password_verify($password, $lu['password'])) {
+            // Reset failed attempts
+            try {
+                if (isset($lu['failed_attempts']) && (int)$lu['failed_attempts'] > 0) {
+                    $db->query("UPDATE local_users SET failed_attempts = 0 WHERE user_id = ?", [$lu['user_id']]);
+                }
+            } catch (\Throwable $e) {}
             // Populate session exactly like live login does
             $_SESSION['user_id']        = $lu['user_id'];
             $_SESSION['employee_id']    = $lu['employee_id'];
@@ -300,7 +340,18 @@ try {
                 ],
             ]);
         } else {
-            respond(['status' => 'error', 'message' => 'Invalid password.'], 401);
+            // Track failed attempts
+            try { $db->query("ALTER TABLE local_users ADD COLUMN `failed_attempts` INT DEFAULT 0"); } catch (\Throwable $e) {}
+            $attempts = (int)($lu['failed_attempts'] ?? 0) + 1;
+            
+            if ($attempts >= 3) {
+                try { $db->query("UPDATE local_users SET status = 'locked', failed_attempts = ? WHERE user_id = ?", [$attempts, $lu['user_id']]); } catch (\Throwable $e) {}
+                respond(['status' => 'error', 'message' => 'Your account has been locked due to 3 failed attempts. Please contact an administrator.'], 403);
+            } else {
+                try { $db->query("UPDATE local_users SET failed_attempts = ? WHERE user_id = ?", [$attempts, $lu['user_id']]); } catch (\Throwable $e) {}
+                $remaining = 3 - $attempts;
+                respond(['status' => 'error', 'message' => "Invalid password. You have $remaining attempt(s) left."], 401);
+            }
         }
     }
 } catch (\Throwable $localErr) {
