@@ -39,6 +39,105 @@ if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
     $body = file_get_contents('php://input');
 }
 
+// ── Self-proxy guard ────────────────────────────────────────────────────────
+// When deployed to civentral.tech, this file would proxy to itself.
+// Detect that and skip proxy for POST (account creation) — handle directly.
+$currentHost = strtolower($_SERVER['HTTP_HOST'] ?? '');
+$remoteHost  = strtolower(parse_url($apiBaseUrl, PHP_URL_HOST) ?? '');
+$isSelfProxy = ($currentHost !== '' && $currentHost === $remoteHost);
+
+if ($isSelfProxy && $method === 'POST') {
+    // Running ON the live server — create account directly in production DB
+    require_once __DIR__ . '/../../config/database.php';
+    $pd  = json_decode($body, true) ?? [];
+    $fN  = trim($pd['first_name']  ?? '');
+    $mN  = trim($pd['middle_name'] ?? '');
+    $lN  = trim($pd['last_name']   ?? '');
+    $eI  = trim($pd['employee_id'] ?? '');
+    $em  = trim($pd['email']       ?? '');
+    $mo  = trim($pd['mobile_number'] ?? '');
+    $dI  = $pd['department_id']   ?? null;
+    $po  = trim($pd['position_name'] ?? '');
+    $rId = $pd['role_id']         ?? null;
+    $rN  = trim($pd['role_name']  ?? '');
+    $rP  = trim($pd['role_prefix'] ?? 'STF');
+
+    if (!$fN || !$lN || !$em || !$eI) {
+        respond(['status' => 'error', 'message' => 'Missing required fields.'], 400);
+    }
+
+    try {
+        $db   = Database::getInstance();
+        $tP   = 'Civentral@' . rand(1000, 9999);
+        $hash = password_hash($tP, PASSWORD_BCRYPT);
+        $uId  = 'USR-' . strtoupper(bin2hex(random_bytes(6)));
+
+        // Try to insert into production users table; fall back to local_users
+        $inserted = false;
+        foreach (['users', 'employees'] as $tbl) {
+            try {
+                $cols = $db->query("SHOW COLUMNS FROM `{$tbl}`", []);
+                $colNames = array_column($cols, 'Field');
+                if (in_array('email', $colNames) && in_array('password', $colNames)) {
+                    $db->query(
+                        "INSERT INTO `{$tbl}` (user_id,first_name,middle_name,last_name,employee_id,email,mobile_number,department_id,position_name,role_id,role_name,role_prefix,password,temp_password,status,created_at)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',NOW())",
+                        [$uId,$fN,$mN,$lN,$eI,$em,$mo,$dI,$po,$rId,$rN,$rP,$hash,$tP]
+                    );
+                    $inserted = true;
+                    break;
+                }
+            } catch (\Throwable $e) { continue; }
+        }
+
+        if (!$inserted) {
+            // Fall back to local_users
+            $db->query(
+                "INSERT INTO local_users (user_id,first_name,middle_name,last_name,employee_id,email,mobile_number,department_id,position_name,role_id,role_name,role_prefix,password,temp_password) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [$uId,$fN,$mN,$lN,$eI,$em,$mo,$dI,$po,$rId,$rN,$rP,$hash,$tP]
+            );
+        }
+
+        // Send credentials email
+        try {
+            require_once __DIR__ . '/../../config/mailer.php';
+            $subject  = 'Welcome to CIVENTRAL - Account Credentials';
+            $htmlBody = '
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;padding:30px;">
+                <h2 style="text-align:center;color:#0f172a;margin-top:0;font-size:22px;">CIVENTRAL PORTAL</h2>
+                <p style="text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;text-transform:uppercase;margin-bottom:30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
+                <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;">
+                <p style="color:#475569;font-size:14px;">Hello <strong>' . $fN . ' ' . $lN . '</strong>,</p>
+                <p style="color:#475569;font-size:14px;line-height:1.6;">Your official CIVENTRAL system user account has been successfully generated. Below are your assigned Employee ID and login credentials:</p>
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-top:25px;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <tr><td style="padding:8px 0;color:#64748b;font-size:14px;font-weight:600;">Assigned Employee ID:</td><td style="padding:8px 0;text-align:right;font-weight:bold;font-family:monospace;color:#0f172a;">' . $eI . '</td></tr>
+                        <tr><td style="padding:8px 0;color:#64748b;font-size:14px;font-weight:600;">Registered Email:</td><td style="padding:8px 0;text-align:right;font-family:monospace;color:#3b82f6;">' . $em . '</td></tr>
+                        <tr style="border-top:1px solid #e2e8f0;"><td style="padding:12px 0 8px;color:#64748b;font-size:14px;font-weight:600;">Temporary Password:</td><td style="padding:12px 0 8px;text-align:right;font-weight:900;font-family:monospace;font-size:16px;color:#0f172a;">' . $tP . '</td></tr>
+                    </table>
+                </div>
+                <p style="color:#64748b;font-size:13px;margin-top:25px;line-height:1.6;">Please log in to the portal using these credentials. Upon first sign in, you will be prompted to update your password.</p>
+            </div>';
+            sendSystemEmail($em, "$fN $lN", $subject, $htmlBody);
+        } catch (\Throwable $mailErr) {
+            // Log but don't fail — account was created
+            error_log('Credentials email failed: ' . $mailErr->getMessage());
+        }
+
+        respond([
+            'status'        => 'success',
+            'message'       => 'Account created successfully. Credentials sent to email.',
+            'user_name'     => "$fN $lN",
+            'email'         => $em,
+            'employee_id'   => $eI,
+            'temp_password' => $tP,
+            'role_name'     => $rN,
+        ]);
+    } catch (\Throwable $ex) {
+        respond(['status' => 'error', 'message' => 'Failed to create account: ' . $ex->getMessage()], 500);
+    }
+}
+
 // RESTRICT DEPARTMENT ADMIN FROM CREATING OTHER ADMINISTRATORS
 if ($method === 'POST') {
     $isSuperAdmin = !empty($_SESSION['is_superadmin']) || !empty($_SESSION['is_global_access']);

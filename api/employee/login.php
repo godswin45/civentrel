@@ -177,23 +177,54 @@ if ($isSelfProxy) {
         $_SESSION['first_name']       = $liveUser['first_name']   ?? null;
         $_SESSION['last_name']        = $liveUser['last_name']    ?? null;
         $_SESSION['role_id']          = $liveUser['role_id']      ?? null;
+        $_SESSION['role_name']        = $liveUser['role_name']    ?? null;
+        $_SESSION['role_prefix']      = $liveUser['role_prefix']  ?? null;
         $_SESSION['is_superadmin']    = (int)($liveUser['is_superadmin']    ?? 0);
         $_SESSION['is_global_access'] = (int)($liveUser['is_global_access'] ?? 0);
         $_SESSION['LAST_ACTIVITY']    = time();
         $_SESSION['current_user_details'] = $liveUser;
 
-        // Check if role requires OTP
-        $isSuperAdmin = !empty($liveUser['is_superadmin']) || strtolower($liveUser['role_name'] ?? '') === 'super administrator';
-        if ($isSuperAdmin) {
-            $_SESSION['otp_pending_email'] = $liveUser['email'];
+        // ── OTP enforcement for ALL accounts (live server) ──────────────
+        $recipientEmail = $liveUser['email'] ?? null;
+        $firstName      = $liveUser['first_name'] ?? 'User';
+        $lastName       = $liveUser['last_name']  ?? '';
+
+        if (!empty($recipientEmail)) {
+            $localOtp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $_SESSION['local_otp_code']    = $localOtp;
+            $_SESSION['local_otp_expires'] = time() + 300;
+            $_SESSION['otp_pending_email'] = $recipientEmail;
+
+            try {
+                require_once __DIR__ . '/../../config/mailer.php';
+                $subject  = 'CIVENTRAL - Your Login Verification Code';
+                $htmlBody = '
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;padding:30px;">
+                    <h2 style="text-align:center;color:#0f172a;margin-top:0;font-size:22px;">CIVENTRAL PORTAL</h2>
+                    <p style="text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;text-transform:uppercase;margin-bottom:30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
+                    <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;">
+                    <p style="color:#475569;font-size:14px;">Hello <strong>' . $firstName . ' ' . $lastName . '</strong>,</p>
+                    <p style="color:#475569;font-size:14px;line-height:1.6;">Your two-factor authentication code for CIVENTRAL Portal login is:</p>
+                    <div style="text-align:center;margin:25px 0;">
+                        <span style="font-size:42px;font-weight:900;font-family:monospace;letter-spacing:12px;color:#0f172a;background:#f8fafc;padding:16px 24px;border-radius:12px;border:2px solid #e2e8f0;display:inline-block;">' . $localOtp . '</span>
+                    </div>
+                    <p style="color:#94a3b8;font-size:12px;text-align:center;">This code expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
+                </div>';
+                sendSystemEmail($recipientEmail, "$firstName $lastName", $subject, $htmlBody);
+            } catch (\Throwable $e) {
+                error_log('OTP email failed: ' . $e->getMessage());
+            }
+
             respond([
                 'status'  => 'otp_required',
-                'message' => 'OTP sent to your registered email.',
-                'email'   => $liveUser['email'],
+                'message' => 'A verification code has been sent to your email.',
+                'email'   => $recipientEmail,
+                'source'  => 'local',
                 'user'    => $liveUser,
             ]);
         }
 
+        // Fallback if no email on record
         respond([
             'status'  => 'success',
             'message' => 'Login successful.',
