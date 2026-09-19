@@ -136,13 +136,18 @@ if (strtolower($employeeIdOrEmail) === 'maintenance') {
 $apiBaseUrl = getenv('EXPO_PUBLIC_API_BASE_URL') ?: 'https://civentral.tech/api/employee';
 $remoteUrl = rtrim($apiBaseUrl, '/') . '/login.php';
 
-// ── Self-call guard ─────────────────────────────────────────────────────────
-// When this file is deployed to civentral.tech, the proxy target IS this same
-// server. Detect that and authenticate directly against the live DB instead of
-// creating an infinite proxy loop.
-$currentHost = strtolower($_SERVER['HTTP_HOST'] ?? '');
-$remoteHost  = strtolower(parse_url($apiBaseUrl, PHP_URL_HOST) ?? '');
-$isSelfProxy = ($currentHost !== '' && $currentHost === $remoteHost);
+// ── Self-call / Live-server guard ────────────────────────────────────────────────
+// Detect if running directly on the live server (Dokploy/Docker with Traefik).
+// Hostname comparison is unreliable behind reverse proxies, so we use:
+//   1. IS_LIVE_SERVER=true env variable (most reliable — set in Dokploy)
+//   2. X-Forwarded-Host header matching
+//   3. Hostname fallback
+$currentHost  = strtolower($_SERVER['HTTP_HOST'] ?? '');
+$forwardedHost = strtolower($_SERVER['HTTP_X_FORWARDED_HOST'] ?? '');
+$remoteHost   = strtolower(parse_url($apiBaseUrl, PHP_URL_HOST) ?? '');
+$isSelfProxy  = (getenv('IS_LIVE_SERVER') === 'true')
+             || ($forwardedHost !== '' && $forwardedHost === $remoteHost)
+             || ($currentHost   !== '' && $currentHost   === $remoteHost);
 
 if ($isSelfProxy) {
     // Running ON the live server — authenticate directly against production DB

@@ -39,12 +39,16 @@ if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
     $body = file_get_contents('php://input');
 }
 
-// ── Self-proxy guard ────────────────────────────────────────────────────────
+// ── Self-proxy guard ─────────────────────────────────────────────────────────
 // When deployed to civentral.tech, this file would proxy to itself.
 // Detect that and skip proxy for POST (account creation) — handle directly.
-$currentHost = strtolower($_SERVER['HTTP_HOST'] ?? '');
-$remoteHost  = strtolower(parse_url($apiBaseUrl, PHP_URL_HOST) ?? '');
-$isSelfProxy = ($currentHost !== '' && $currentHost === $remoteHost);
+// Uses IS_LIVE_SERVER env var (most reliable behind Traefik) + X-Forwarded-Host fallback.
+$currentHost   = strtolower($_SERVER['HTTP_HOST'] ?? '');
+$forwardedHost = strtolower($_SERVER['HTTP_X_FORWARDED_HOST'] ?? '');
+$remoteHost    = strtolower(parse_url($apiBaseUrl, PHP_URL_HOST) ?? '');
+$isSelfProxy   = (getenv('IS_LIVE_SERVER') === 'true')
+              || ($forwardedHost !== '' && $forwardedHost === $remoteHost)
+              || ($currentHost   !== '' && $currentHost   === $remoteHost);
 
 if ($isSelfProxy && $method === 'POST') {
     // Running ON the live server — create account directly in production DB
