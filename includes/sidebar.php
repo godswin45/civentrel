@@ -157,13 +157,20 @@
           </a>
 
           <!-- BOTTOM SECTION: MAIN CONTROL (ADMINISTRATION & GOVERNANCE) -->
+          <?php
+          $canAccessUserMgmt    = $isSuperAdmin || $hasResourceAccess(['user directory', 'user account', 'users account', 'account status', 'user', 'account', 'employee']);
+          $canAccessRoleMgmt    = $isSuperAdmin || $hasResourceAccess(['role', 'permission', 'module', 'resource', 'access control']);
+          $canAccessDeptMgmt    = $isSuperAdmin || $hasResourceAccess(['department', 'dept', 'organization']);
+          $canAccessCitizenMgmt = $isSuperAdmin || $hasResourceAccess(['citizen', 'citizen directory', 'citizen account', 'resident']);
+          $canAccessAudit       = $isSuperAdmin || $hasResourceAccess(['audit', 'audit log', 'user activity', 'login history', 'data change']);
+
+          if ($canAccessUserMgmt || $canAccessRoleMgmt || $canAccessDeptMgmt || $canAccessCitizenMgmt || $canAccessAudit):
+          ?>
           <span class="sidebar-text text-[9px] font-bold tracking-widest text-slate-400 uppercase block px-3 mt-6 mb-2">Main Control</span>
+          <?php endif; ?>
 
           <!-- User Management Dropdown -->
-          <?php 
-          $canAccessUserMgmt = $isSuperAdmin || $hasResourceAccess(['user directory', 'user account', 'users account', 'account status', 'user', 'account', 'employee']);
-          if ($canAccessUserMgmt): 
-          ?>
+          <?php if ($canAccessUserMgmt): ?>
           <div class="space-y-1">
             <button onclick="toggleDropdown('userDropdown', 'userChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, $usermanagementPages) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
               <div class="flex items-center space-x-3">
@@ -183,10 +190,7 @@
           <?php endif; ?>
 
           <!-- Role & Permission Dropdown -->
-          <?php 
-          $canAccessRoleMgmt = $isSuperAdmin || $hasResourceAccess(['role', 'permission', 'module', 'resource', 'access control']);
-          if ($canAccessRoleMgmt): 
-          ?>
+          <?php if ($canAccessRoleMgmt): ?>
           <div class="space-y-1">
             <button onclick="toggleDropdown('roleDropdown', 'roleChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, $rolesmanagementPages) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
               <div class="flex items-center space-x-3">
@@ -208,10 +212,7 @@
           <?php endif; ?>
 
           <!-- Department Management -->
-          <?php 
-          $canAccessDeptMgmt = $isSuperAdmin || $hasResourceAccess(['department', 'dept', 'organization']);
-          if ($canAccessDeptMgmt): 
-          ?>
+          <?php if ($canAccessDeptMgmt): ?>
           <a href="<?php echo $basePath ?? '../'; ?>pages/departments.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'departments.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-sitemap text-sm <?php echo $currentPage == 'departments.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Department Management</span>
@@ -219,10 +220,7 @@
           <?php endif; ?>
 
           <!-- Citizen Management Dropdown -->
-          <?php 
-          $canAccessCitizenMgmt = $isSuperAdmin || $hasResourceAccess(['citizen', 'citizen directory', 'citizen account', 'resident']);
-          if ($canAccessCitizenMgmt): 
-          ?>
+          <?php if ($canAccessCitizenMgmt): ?>
           <div class="space-y-1">
             <button onclick="toggleDropdown('citizenDropdown', 'citizenChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, $citizenPages) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
               <div class="flex items-center space-x-3">
@@ -241,10 +239,7 @@
           <?php endif; ?>
 
           <!-- Audit Logs Dropdown -->
-          <?php 
-          $canAccessAudit = $isSuperAdmin || $hasResourceAccess(['audit', 'audit log', 'user activity', 'login history', 'data change']);
-          if ($canAccessAudit): 
-          ?>
+          <?php if ($canAccessAudit): ?>
           <div class="space-y-1">
             <button onclick="toggleDropdown('auditDropdown', 'auditChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, $auditPages) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
               <div class="flex items-center space-x-3">
