@@ -101,49 +101,6 @@ function getUserInitials(user) {
   return f + l;
 }
 
-// RENDER SKELETON TABLE WHILE LOADING DATA
-function renderSkeletonTable() {
-  const tbody = document.getElementById('directoryTableBody');
-  if (!tbody) return;
-
-  let html = '';
-  for (let i = 0; i < 5; i++) {
-    html += `
-      <tr class="animate-pulse">
-        <td class="px-6 py-4 flex items-center space-x-3">
-          <div class="skeleton-loader h-9 w-9 rounded-xl shrink-0"></div>
-          <div class="space-y-1.5 w-full">
-            <div class="skeleton-loader h-3.5 w-36 rounded-md"></div>
-            <div class="skeleton-loader h-2.5 w-44 rounded-md"></div>
-          </div>
-        </td>
-        <td class="px-6 py-4">
-          <div class="skeleton-loader h-3.5 w-24 rounded-md"></div>
-        </td>
-        <td class="px-6 py-4">
-          <div class="space-y-1.5">
-            <div class="skeleton-loader h-3.5 w-36 rounded-md"></div>
-            <div class="skeleton-loader h-2.5 w-28 rounded-md"></div>
-          </div>
-        </td>
-        <td class="px-6 py-4">
-          <div class="skeleton-loader h-5 w-20 rounded-full"></div>
-        </td>
-        <td class="px-6 py-4">
-          <div class="skeleton-loader h-5 w-16 rounded-full"></div>
-        </td>
-        <td class="px-6 py-4 text-right">
-          <div class="skeleton-loader h-7 w-20 rounded-lg ml-auto"></div>
-        </td>
-      </tr>
-    `;
-  }
-  tbody.innerHTML = html;
-
-  const pagEl = document.getElementById('paginationText');
-  if (pagEl) pagEl.innerText = "Loading user records...";
-}
-
 // RENDER DATATABLE FROM Database records
 function renderTable(usersList = systemUsers) {
   const tbody = document.getElementById('directoryTableBody');
@@ -167,6 +124,7 @@ function renderTable(usersList = systemUsers) {
   const isSuperAdmin = currentUserScope ? !!currentUserScope.is_superadmin : false;
   const grantedActions = currentUserScope ? (currentUserScope.granted_actions || []) : [];
   const canEdit = isSuperAdmin || grantedActions.includes('EDIT');
+  const canDelete = isSuperAdmin || grantedActions.includes('DELETE');
 
   usersList.forEach(user => {
     const fullName = getUserFullName(user);
@@ -247,16 +205,20 @@ function renderTable(usersList = systemUsers) {
       </td>
       <td class="px-6 py-3.5 text-right whitespace-nowrap">
         <div class="inline-flex items-center space-x-1">
-          <button onclick="if(typeof openViewModal === 'function') openViewModal('${user.user_id}')" class="text-slate-400 hover:text-brand-dark hover:bg-brand-light hover:border-brand-border/40 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="View Profile">
+          <button onclick="if(typeof openViewModal === 'function') openViewModal(${user.user_id})" class="text-slate-400 hover:text-brand-dark hover:bg-brand-light hover:border-brand-border/40 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="View Profile">
             <i class="fa-solid fa-eye text-xs"></i>
           </button>
           ${canEdit ? `
-          <button onclick="if(typeof openEditModal === 'function') openEditModal('${user.user_id}')" class="text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Edit Profile">
+          <button onclick="if(typeof openEditModal === 'function') openEditModal(${user.user_id})" class="text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Edit Profile">
             <i class="fa-solid fa-pen text-xs"></i>
           </button>` : ''}
-          <button onclick="if(typeof openHistoryModal === 'function') openHistoryModal('${user.user_id}')" class="text-slate-400 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Security Audit Log">
+          <button onclick="if(typeof openHistoryModal === 'function') openHistoryModal(${user.user_id})" class="text-slate-400 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Security Audit Log">
             <i class="fa-solid fa-clock-rotate-left text-xs"></i>
           </button>
+          ${canDelete ? `
+          <button onclick="if(typeof openArchiveUserModal === 'function') openArchiveUserModal(${user.user_id})" class="text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer ${user.status === 'Archived' ? 'opacity-40 cursor-not-allowed' : ''}" ${user.status === 'Archived' ? 'disabled' : ''} title="Archive User Account">
+            <i class="fa-solid fa-box-archive text-xs"></i>
+          </button>` : ''}
         </div>
       </td>
     `;
@@ -267,24 +229,6 @@ function renderTable(usersList = systemUsers) {
   if (pagEl) {
     pagEl.innerText = `Showing 1 to ${usersList.length} of ${systemUsers.length} profiles`;
   }
-
-  hideDirectorySkeleton();
-}
-
-function hideDirectorySkeleton() {
-  const skel = document.getElementById('directorySkeleton');
-  const real = document.getElementById('directoryRealContent');
-  if (!skel || !real) return;
-
-  real.classList.remove('hidden');
-  requestAnimationFrame(() => {
-    skel.classList.add('opacity-0', 'pointer-events-none');
-    real.classList.remove('opacity-0', 'translate-y-2');
-    real.classList.add('opacity-100', 'translate-y-0');
-    setTimeout(() => {
-      skel.classList.add('hidden');
-    }, 500);
-  });
 }
 
 // UPDATE METRICS BOARD

@@ -1,36 +1,4 @@
-// RENDER SKELETON TABLE WHILE LOADING
-function renderSkeletonTable() {
-  const tbody = document.getElementById('statusTableBody');
-  if (!tbody) return;
-
-  let html = '';
-  for (let i = 0; i < 5; i++) {
-    html += `
-      <tr class="animate-pulse">
-        <td class="px-6 py-4 flex items-center space-x-3">
-          <div class="skeleton-loader h-9 w-9 rounded-xl shrink-0"></div>
-          <div class="space-y-1.5 w-full">
-            <div class="skeleton-loader h-3.5 w-36 rounded-md"></div>
-            <div class="skeleton-loader h-2.5 w-44 rounded-md"></div>
-          </div>
-        </td>
-        <td class="px-6 py-4">
-          <div class="skeleton-loader h-5 w-20 rounded-full"></div>
-        </td>
-        <td class="px-6 py-4">
-          <div class="space-y-1.5">
-            <div class="skeleton-loader h-3 w-32 rounded-md"></div>
-            <div class="skeleton-loader h-3 w-28 rounded-md"></div>
-          </div>
-        </td>
-        <td class="px-6 py-4 text-right">
-          <div class="skeleton-loader h-7 w-28 rounded-lg ml-auto"></div>
-        </td>
-      </tr>
-    `;
-  }
-  tbody.innerHTML = html;
-}
+// ACCOUNT STATUS UI
 
 // RENDER TABLE
 function renderTable(usersList = accountUsers) {
@@ -76,21 +44,14 @@ function renderTable(usersList = accountUsers) {
     }
 
     // Status switch details
-    const isSelf = (
-      (window.currentUserId && (user.db_id == window.currentUserId || user.id == window.currentUserId)) ||
-      (window.currentEmployeeId && user.id == window.currentEmployeeId) ||
-      (window.currentUserEmail && user.email && user.email.toLowerCase() === window.currentUserEmail.toLowerCase())
-    );
-
     const isChecked = user.status === 'Active' ? 'checked' : '';
-    const isToggleDisabled = (isSelf || user.status === 'Locked' || user.status === 'Archived') ? 'disabled opacity-50 cursor-not-allowed' : '';
-    const statusToggleTitle = isSelf ? 'You cannot deactivate your own account' : 'Activate/Deactivate toggle';
+    const isToggleDisabled = (user.status === 'Locked' || user.status === 'Archived') ? 'disabled opacity-50 cursor-not-allowed' : '';
 
     const lockBtnIcon = user.status === 'Locked' ? 'fa-lock text-rose-600 hover:bg-rose-50 border-rose-100' : 'fa-lock-open text-slate-400 hover:text-slate-700 hover:bg-slate-50 border-transparent';
-    const lockBtnTitle = isSelf ? 'You cannot lock your own account' : (user.status === 'Locked' ? 'Unlock Account' : 'Suspend Account (Lock)');
+    const lockBtnTitle = user.status === 'Locked' ? 'Unlock Account' : 'Suspend Account (Lock)';
 
     const archiveBtnIcon = user.status === 'Archived' ? 'fa-arrow-rotate-left text-amber-600 hover:bg-amber-50 hover:border-amber-150' : 'fa-box-archive text-slate-400 hover:text-rose-600 hover:bg-rose-50 border-transparent';
-    const archiveBtnTitle = isSelf ? 'You cannot archive your own account' : (user.status === 'Archived' ? 'Restore Profile' : 'Archive Profile');
+    const archiveBtnTitle = user.status === 'Archived' ? 'Restore Profile' : 'Archive Profile';
 
     const colors = ['bg-blue-500', 'bg-indigo-500', 'bg-purple-500', 'bg-rose-500', 'bg-emerald-500', 'bg-slate-500', 'bg-amber-600'];
     let colorIndex = (user.name.charCodeAt(0) + user.name.charCodeAt(user.name.length - 1)) % colors.length;
@@ -146,18 +107,18 @@ function renderTable(usersList = accountUsers) {
           <div class="inline-flex items-center space-x-3">
             
             <!-- iOS-style Status Toggle Switch -->
-            <label class="relative inline-flex items-center ${isToggleDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} select-none" title="${statusToggleTitle}">
+            <label class="relative inline-flex items-center ${isToggleDisabled ? 'cursor-not-allowed' : 'cursor-pointer'} select-none" title="Activate/Deactivate toggle">
               <input type="checkbox" ${isChecked} ${isToggleDisabled} onchange="if(typeof handleStatusToggle === 'function') handleStatusToggle('${user.id}', this)" class="sr-only peer">
               <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-brand-medium/20 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500"></div>
             </label>
 
             <!-- Lock/Unlock toggle button -->
-            <button ${isSelf ? 'disabled opacity-40 cursor-not-allowed' : ''} onclick="if(typeof triggerLockToggle === 'function') triggerLockToggle('${user.id}')" class="border p-1.5 rounded-lg transition ${isSelf ? 'cursor-not-allowed' : 'cursor-pointer'} flex items-center justify-center ${lockBtnIcon}" title="${lockBtnTitle}">
+            <button onclick="if(typeof triggerLockToggle === 'function') triggerLockToggle('${user.id}')" class="border p-1.5 rounded-lg transition cursor-pointer flex items-center justify-center ${lockBtnIcon}" title="${lockBtnTitle}">
               <i class="fa-solid ${user.status === 'Locked' ? 'fa-lock' : 'fa-lock-open'} text-xs"></i>
             </button>
 
             <!-- Archive/Restore toggle button -->
-            <button ${isSelf ? 'disabled opacity-40 cursor-not-allowed' : ''} onclick="if(typeof triggerArchiveToggle === 'function') triggerArchiveToggle('${user.id}')" class="border p-1.5 rounded-lg transition ${isSelf ? 'cursor-not-allowed' : 'cursor-pointer'} flex items-center justify-center ${archiveBtnIcon}" title="${archiveBtnTitle}">
+            <button onclick="if(typeof triggerArchiveToggle === 'function') triggerArchiveToggle('${user.id}')" class="border p-1.5 rounded-lg transition cursor-pointer flex items-center justify-center ${archiveBtnIcon}" title="${archiveBtnTitle}">
               <i class="fa-solid ${user.status === 'Archived' ? 'fa-arrow-rotate-left' : 'fa-box-archive'} text-xs"></i>
             </button>
 
@@ -170,24 +131,6 @@ function renderTable(usersList = accountUsers) {
 
   const pagText = document.getElementById('statusPaginationText');
   if (pagText) pagText.innerText = `Showing 1 to ${usersList.length} of ${usersList.length} profiles`;
-
-  hideAccountStatusSkeleton();
-}
-
-function hideAccountStatusSkeleton() {
-  const skel = document.getElementById('accountStatusSkeleton');
-  const real = document.getElementById('accountStatusRealContent');
-  if (!skel || !real) return;
-
-  real.classList.remove('hidden');
-  requestAnimationFrame(() => {
-    skel.classList.add('opacity-0', 'pointer-events-none');
-    real.classList.remove('opacity-0', 'translate-y-2');
-    real.classList.add('opacity-100', 'translate-y-0');
-    setTimeout(() => {
-      skel.classList.add('hidden');
-    }, 500);
-  });
 }
 
 // UPDATE FILTER COUNTS

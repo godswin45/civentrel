@@ -1,14 +1,15 @@
 <?php
 $basePath = '../../';
+require_once __DIR__ . '/../../src/bootstrap.php';
 include '../../includes/header.php';
 include '../../includes/sidebar.php';
 ?>
-
 <script>
-  window.currentUserId = <?php echo json_encode($_SESSION['user_id'] ?? null); ?>;
+  window.currentUserId     = <?php echo json_encode($_SESSION['user_id']     ?? null); ?>;
   window.currentEmployeeId = <?php echo json_encode($_SESSION['employee_id'] ?? null); ?>;
-  window.currentUserEmail = <?php echo json_encode($_SESSION['email'] ?? null); ?>;
+  window.currentUserEmail  = <?php echo json_encode($_SESSION['email']       ?? null); ?>;
 </script>
+
 
 <main class="flex-1 p-6 md:p-8 w-full space-y-6 overflow-y-auto">
 
@@ -30,271 +31,195 @@ include '../../includes/sidebar.php';
     </div>
   </div>
 
-  <!-- FULL CONTENT SKELETON LOADER -->
-  <div id="directorySkeleton" class="space-y-6 transition-all duration-500 opacity-100 pointer-events-auto">
-    <!-- Stat Cards Skeleton -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-      <?php for($i=0; $i<4; $i++): ?>
-      <div class="glass-panel rounded-2xl p-5 flex items-center justify-between dark:bg-slate-900/85 dark:border-slate-800/80">
-        <div class="space-y-2.5 w-full">
-          <div class="skeleton-loader h-3 w-28 rounded-md"></div>
-          <div class="skeleton-loader h-7 w-20 rounded-lg"></div>
-          <div class="skeleton-loader h-2.5 w-36 rounded-md"></div>
+  <!-- Dashboard Metrics Header (Stats Cards) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+    <!-- Stat Card 1: Total Users -->
+    <div 
+      onclick="filterUserCard('ALL')"
+      id="cardTotalUsers"
+      class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
+      title="Click to view all user profiles"
+    >
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 via-teal-500 to-brand-dark opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
+      <div class="flex items-start justify-between">
+        <div class="space-y-1">
+          <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-brand-dark dark:group-hover:text-cyan-400 transition-colors block">Total Users</span>
+          <h3 id="statTotalUsers" class="text-3xl font-black text-slate-900 dark:text-white tracking-tight">0</h3>
         </div>
-        <div class="skeleton-loader h-11 w-11 rounded-xl shrink-0 ml-3"></div>
+        <div class="h-12 w-12 rounded-2xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200/80 dark:border-cyan-800/50 flex items-center justify-center text-brand-dark dark:text-cyan-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
+          <i class="fa-solid fa-users text-lg"></i>
+        </div>
       </div>
-      <?php endfor; ?>
+      <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+        <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
+          <span class="h-1.5 w-1.5 rounded-full bg-brand-dark animate-pulse"></span>
+          Registered staff profiles
+        </p>
+        <span class="text-[10px] font-black text-brand-dark dark:text-cyan-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
+          View All <i class="fa-solid fa-arrow-right text-[9px]"></i>
+        </span>
+      </div>
     </div>
 
-    <!-- Action Bar / Filters Skeleton -->
-    <div class="glass-panel p-4 rounded-2xl border border-slate-200/80 dark:bg-slate-900/85 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-      <div class="skeleton-loader h-10 w-full sm:w-80 rounded-xl"></div>
-      <div class="flex items-center gap-3 w-full sm:w-auto">
-        <div class="skeleton-loader h-10 w-32 rounded-xl"></div>
-        <div class="skeleton-loader h-10 w-32 rounded-xl"></div>
+    <!-- Stat Card 2: Active Accounts -->
+    <div 
+      onclick="filterUserCard('ACTIVE')"
+      id="cardActiveUsers"
+      class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
+      title="Click to filter active accounts"
+    >
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-600 opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
+      <div class="flex items-start justify-between">
+        <div class="space-y-1">
+          <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors block">Active Accounts</span>
+          <div class="flex items-baseline space-x-2">
+            <h3 id="statActiveUsers" class="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">0</h3>
+            <span id="statActiveBadge" class="text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 0%
+            </span>
+          </div>
+        </div>
+        <div class="h-12 w-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
+          <i class="fa-solid fa-user-check text-lg"></i>
+        </div>
+      </div>
+      <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+        <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+          Active system access grants
+        </p>
+        <span class="text-[10px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
+          Filter Active <i class="fa-solid fa-filter text-[9px]"></i>
+        </span>
       </div>
     </div>
 
-    <!-- Datatable Skeleton -->
-    <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-50 border-b border-slate-100">
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-28 rounded-md"></div></th>
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-24 rounded-md"></div></th>
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-36 rounded-md"></div></th>
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-20 rounded-md"></div></th>
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-16 rounded-md"></div></th>
-              <th class="px-6 py-4 text-right"><div class="skeleton-loader h-3 w-20 rounded-md ml-auto"></div></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100/80 text-xs">
-            <?php for($d = 0; $d < 5; $d++): ?>
-            <tr class="animate-pulse">
-              <td class="px-6 py-4 flex items-center space-x-3">
-                <div class="skeleton-loader h-9 w-9 rounded-xl shrink-0"></div>
-                <div class="space-y-1.5 w-full">
-                  <div class="skeleton-loader h-3.5 w-36 rounded-md"></div>
-                  <div class="skeleton-loader h-2.5 w-44 rounded-md"></div>
-                </div>
-              </td>
-              <td class="px-6 py-4"><div class="skeleton-loader h-3.5 w-24 rounded-md"></div></td>
-              <td class="px-6 py-4">
-                <div class="space-y-1.5">
-                  <div class="skeleton-loader h-3.5 w-36 rounded-md"></div>
-                  <div class="skeleton-loader h-2.5 w-28 rounded-md"></div>
-                </div>
-              </td>
-              <td class="px-6 py-4"><div class="skeleton-loader h-5 w-20 rounded-full"></div></td>
-              <td class="px-6 py-4"><div class="skeleton-loader h-5 w-16 rounded-full"></div></td>
-              <td class="px-6 py-4 text-right"><div class="skeleton-loader h-7 w-20 rounded-lg ml-auto"></div></td>
-            </tr>
-            <?php endfor; ?>
-          </tbody>
-        </table>
+    <!-- Stat Card 3: Deactivated Accounts -->
+    <div 
+      onclick="filterUserCard('DEACTIVATED')"
+      id="cardDeactiveUsers"
+      class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
+      title="Click to manage deactivated account status file"
+    >
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-400 via-red-500 to-rose-600 opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
+      <div class="flex items-start justify-between">
+        <div class="space-y-1">
+          <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors block">Deactivated Accounts</span>
+          <h3 id="statDeactivatedUsers" class="text-3xl font-black text-rose-600 dark:text-rose-400 tracking-tight">0</h3>
+        </div>
+        <div class="h-12 w-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/50 flex items-center justify-center text-rose-600 dark:text-rose-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
+          <i class="fa-solid fa-user-slash text-lg"></i>
+        </div>
       </div>
-      <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-        <div class="skeleton-loader h-3.5 w-48 rounded-md"></div>
-        <div class="skeleton-loader h-7 w-24 rounded-xl"></div>
+      <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+        <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
+          <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+          Suspended account credentials
+        </p>
+        <span class="text-[10px] font-black text-rose-600 dark:text-rose-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
+          Account Status <i class="fa-solid fa-arrow-right-to-bracket text-[9px]"></i>
+        </span>
+      </div>
+    </div>
+
+    <!-- Stat Card 4: Active Departments -->
+    <div 
+      onclick="filterUserCard('DEPTS')"
+      id="cardDepts"
+      class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
+      title="Click to open Department Directory management file"
+    >
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
+      <div class="flex items-start justify-between">
+        <div class="space-y-1">
+          <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors block">Active Departments</span>
+          <h3 id="statDepts" class="text-3xl font-black text-blue-600 dark:text-blue-400 tracking-tight">0</h3>
+        </div>
+        <div class="h-12 w-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/50 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
+          <i class="fa-solid fa-sitemap text-lg"></i>
+        </div>
+      </div>
+      <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+        <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
+          <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+          Represented city offices
+        </p>
+        <span class="text-[10px] font-black text-blue-600 dark:text-blue-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
+          Department File <i class="fa-solid fa-arrow-right-to-bracket text-[9px]"></i>
+        </span>
       </div>
     </div>
   </div>
 
-  <!-- REAL PAGE CONTENT -->
-  <div id="directoryRealContent" class="space-y-6 hidden opacity-0 transition-all duration-700 ease-out transform translate-y-2">
-    
-    <!-- Dashboard Metrics Header (Stats Cards) -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-      <!-- Stat Card 1: Total Users -->
-      <div 
-        onclick="filterUserCard('ALL')"
-        id="cardTotalUsers"
-        class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
-        title="Click to view all user profiles"
-      >
-        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 via-teal-500 to-brand-dark opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
-        <div class="flex items-start justify-between">
-          <div class="space-y-1">
-            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-brand-dark dark:group-hover:text-cyan-400 transition-colors block">Total Users</span>
-            <h3 id="statTotalUsers" class="text-3xl font-black text-slate-900 dark:text-white tracking-tight">0</h3>
-          </div>
-          <div class="h-12 w-12 rounded-2xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200/80 dark:border-cyan-800/50 flex items-center justify-center text-brand-dark dark:text-cyan-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
-            <i class="fa-solid fa-users text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-          <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-            <span class="h-1.5 w-1.5 rounded-full bg-brand-dark animate-pulse"></span>
-            Registered staff profiles
-          </p>
-          <span class="text-[10px] font-black text-brand-dark dark:text-cyan-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
-            View All <i class="fa-solid fa-arrow-right text-[9px]"></i>
-          </span>
-        </div>
+  <!-- Action Bar -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+    <!-- Left Side: Search & Filters -->
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+      <!-- Search Bar -->
+      <div class="relative flex-1 max-w-md">
+        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+        <input type="text" id="searchInput" placeholder="Search by name, email, employee ID..." class="pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs w-full bg-slate-50/50 focus:bg-white focus:outline-none focus:border-brand-medium focus:ring-2 focus:ring-brand-medium/10 transition">
       </div>
 
-      <!-- Stat Card 2: Active Accounts -->
-      <div 
-        onclick="filterUserCard('ACTIVE')"
-        id="cardActiveUsers"
-        class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
-        title="Click to filter active accounts"
-      >
-        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-600 opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
-        <div class="flex items-start justify-between">
-          <div class="space-y-1">
-            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors block">Active Accounts</span>
-            <div class="flex items-baseline space-x-2">
-              <h3 id="statActiveUsers" class="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">0</h3>
-              <span id="statActiveBadge" class="text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 px-1.5 py-0.5 rounded-md flex items-center gap-1">
-                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 0%
-              </span>
-            </div>
-          </div>
-          <div class="h-12 w-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
-            <i class="fa-solid fa-user-check text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-          <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-            Active system access grants
-          </p>
-          <span class="text-[10px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
-            Filter Active <i class="fa-solid fa-filter text-[9px]"></i>
-          </span>
-        </div>
-      </div>
+      <!-- Filters -->
+      <div class="flex items-center gap-2">
+        <!-- Role Filter -->
+        <select id="roleFilter" class="border border-slate-200 rounded-xl text-xs px-3 py-2.5 bg-slate-50/50 hover:bg-white focus:outline-none focus:border-brand-medium transition cursor-pointer font-semibold text-slate-600 max-w-[130px]">
+          <option value="">All Roles</option>
+        </select>
 
-      <!-- Stat Card 3: Deactivated Accounts -->
-      <div 
-        onclick="filterUserCard('DEACTIVATED')"
-        id="cardDeactiveUsers"
-        class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
-        title="Click to manage deactivated account status file"
-      >
-        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-400 via-red-500 to-rose-600 opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
-        <div class="flex items-start justify-between">
-          <div class="space-y-1">
-            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors block">Deactivated Accounts</span>
-            <h3 id="statDeactivatedUsers" class="text-3xl font-black text-rose-600 dark:text-rose-400 tracking-tight">0</h3>
-          </div>
-          <div class="h-12 w-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/50 flex items-center justify-center text-rose-600 dark:text-rose-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
-            <i class="fa-solid fa-user-slash text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-          <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-            <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
-            Suspended account credentials
-          </p>
-          <span class="text-[10px] font-black text-rose-600 dark:text-rose-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
-            Account Status <i class="fa-solid fa-arrow-right-to-bracket text-[9px]"></i>
-          </span>
-        </div>
-      </div>
-
-      <!-- Stat Card 4: Active Departments -->
-      <div 
-        onclick="filterUserCard('DEPTS')"
-        id="cardDepts"
-        class="user-metric-card bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden flex flex-col justify-between"
-        title="Click to open Department Directory management file"
-      >
-        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 opacity-90 group-hover:h-1.5 transition-all duration-300"></div>
-        <div class="flex items-start justify-between">
-          <div class="space-y-1">
-            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors block">Active Departments</span>
-            <h3 id="statDepts" class="text-3xl font-black text-blue-600 dark:text-blue-400 tracking-tight">0</h3>
-          </div>
-          <div class="h-12 w-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/50 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shrink-0 shadow-xs">
-            <i class="fa-solid fa-sitemap text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-          <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-            <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
-            Represented city offices
-          </p>
-          <span class="text-[10px] font-black text-blue-600 dark:text-blue-400 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
-            Department File <i class="fa-solid fa-arrow-right-to-bracket text-[9px]"></i>
-          </span>
-        </div>
+        <!-- Department Filter -->
+        <select id="deptFilter" class="border border-slate-200 rounded-xl text-xs px-3 py-2.5 bg-slate-50/50 hover:bg-white focus:outline-none focus:border-brand-medium transition cursor-pointer font-semibold text-slate-600 max-w-[200px]">
+          <option value="">All Departments</option>
+        </select>
       </div>
     </div>
 
-    <!-- Action Bar -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-      <!-- Left Side: Search & Filters -->
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-        <!-- Search Bar -->
-        <div class="relative flex-1 max-w-md">
-          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-          <input type="text" id="searchInput" placeholder="Search by name, email, employee ID..." class="pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs w-full bg-slate-50/50 focus:bg-white focus:outline-none focus:border-brand-medium focus:ring-2 focus:ring-brand-medium/10 transition">
-        </div>
+    <!-- Right Side: Action Buttons -->
+    <div class="flex items-center gap-2 shrink-0">
+      <!-- Export to CSV -->
+      <button onclick="exportToCSV()" class="border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 cursor-pointer transition">
+        <i class="fa-solid fa-download"></i>
+        <span>Export</span>
+      </button>
+    </div>
+  </div>
 
-        <!-- Filters -->
-        <div class="flex items-center gap-2">
-          <!-- Role Filter -->
-          <select id="roleFilter" class="border border-slate-200 rounded-xl text-xs px-3 py-2.5 bg-slate-50/50 hover:bg-white focus:outline-none focus:border-brand-medium transition cursor-pointer font-semibold text-slate-600 max-w-[130px]">
-            <option value="">All Roles</option>
-          </select>
+  <!-- Responsive Datatable -->
+  <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+            <th class="px-6 py-4">User Details</th>
+            <th class="px-6 py-4">Employee ID</th>
+            <th class="px-6 py-4">Department & Position</th>
+            <th class="px-6 py-4">Role</th>
+            <th class="px-6 py-4">Status</th>
+            <th class="px-6 py-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="directoryTableBody" class="divide-y divide-slate-100/80 text-xs">
+          <!-- Dynamically populated by JS -->
+        </tbody>
+      </table>
+    </div>
 
-          <!-- Department Filter -->
-          <select id="deptFilter" class="border border-slate-200 rounded-xl text-xs px-3 py-2.5 bg-slate-50/50 hover:bg-white focus:outline-none focus:border-brand-medium transition cursor-pointer font-semibold text-slate-600 max-w-[200px]">
-            <option value="">All Departments</option>
-          </select>
-        </div>
+    <!-- Table Footer / Pagination -->
+    <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-400">
+      <div id="paginationText">
+        Showing 0 to 0 of 0 profiles
       </div>
-
-      <!-- Right Side: Action Buttons -->
-      <div class="flex items-center gap-2 shrink-0">
-        <!-- Export to CSV -->
-        <button onclick="exportToCSV()" class="border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 cursor-pointer transition">
-          <i class="fa-solid fa-download"></i>
-          <span>Export</span>
+      <div class="flex items-center space-x-1">
+        <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
+          <i class="fa-solid fa-chevron-left text-[9px]"></i>
+        </button>
+        <button class="px-3 py-1.5 rounded-lg bg-brand-light border border-brand-border text-brand-dark font-extrabold">1</button>
+        <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
+          <i class="fa-solid fa-chevron-right text-[9px]"></i>
         </button>
       </div>
     </div>
-
-    <!-- Responsive Datatable -->
-    <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-              <th class="px-6 py-4">User Details</th>
-              <th class="px-6 py-4">Employee ID</th>
-              <th class="px-6 py-4">Department & Position</th>
-              <th class="px-6 py-4">Role</th>
-              <th class="px-6 py-4">Status</th>
-              <th class="px-6 py-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="directoryTableBody" class="divide-y divide-slate-100/80 text-xs">
-            <!-- Populated dynamically by JS -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Table Footer / Pagination -->
-      <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-400">
-        <div id="paginationText">
-          Showing 0 to 0 of 0 profiles
-        </div>
-        <div class="flex items-center space-x-1">
-          <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
-            <i class="fa-solid fa-chevron-left text-[9px]"></i>
-          </button>
-          <button class="px-3 py-1.5 rounded-lg bg-brand-light border border-brand-border text-brand-dark font-extrabold">1</button>
-          <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
-            <i class="fa-solid fa-chevron-right text-[9px]"></i>
-          </button>
-        </div>
-      </div>
-    </div>
-
   </div>
 
 </main>
@@ -489,6 +414,32 @@ include '../../includes/sidebar.php';
         </div>
       </div>
     </form>
+  </div>
+<!-- CONFIRM ARCHIVE USER MODAL -->
+<div id="archiveModal" class="fixed inset-0 z-50 flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300 bg-slate-900/60 backdrop-blur-xs">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden transform scale-95 transition-all duration-300">
+    <div class="p-6 space-y-4 text-center">
+      <div class="h-14 w-14 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center mx-auto text-xl shadow-2xs">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <div class="space-y-1">
+        <h3 class="text-base font-black text-slate-900 tracking-tight">Archive User Account?</h3>
+        <p id="archiveTargetUserName" class="text-xs font-bold text-brand-dark">User Account</p>
+      </div>
+      <div class="bg-amber-50/80 border border-amber-200/80 rounded-xl p-3.5 text-left text-xs leading-relaxed text-amber-800 flex items-start gap-2.5">
+        <i class="fa-solid fa-circle-exclamation text-amber-600 text-sm mt-0.5 shrink-0"></i>
+        <span>Archiving this user profile will revoke active session access and soft-delete the user account across CIVENTRAL services.</span>
+      </div>
+      <div class="pt-2 flex items-center justify-end gap-2.5">
+        <button type="button" onclick="closeModal('archiveModal')" class="w-1/2 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer">
+          Cancel
+        </button>
+        <button type="button" onclick="confirmArchiveUser()" class="w-1/2 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-box-archive text-xs"></i>
+          <span>Confirm Archive</span>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

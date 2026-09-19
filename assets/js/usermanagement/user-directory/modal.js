@@ -27,7 +27,7 @@ function closeModal(id) {
 
 // VIEW PROFILE MODAL
 function openViewModal(userId) {
-  const user = systemUsers.find(u => String(u.user_id) === String(userId));
+  const user = systemUsers.find(u => u.user_id === userId);
   if (!user) return;
 
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
@@ -106,7 +106,7 @@ function openEditModal(userId) {
     return;
   }
 
-  const user = systemUsers.find(u => String(u.user_id) === String(userId));
+  const user = systemUsers.find(u => u.user_id === userId);
   if (!user) return;
 
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
@@ -127,30 +127,15 @@ function openEditModal(userId) {
   const editRole = document.getElementById('editRole');
   if (editRole) editRole.value = user.role_id || '';
 
-  const isSelf = (
-    (window.currentUserId && (user.user_id == window.currentUserId || user.id == window.currentUserId)) ||
-    (window.currentEmployeeId && user.employee_id == window.currentEmployeeId) ||
-    (window.currentUserEmail && user.email && user.email.toLowerCase() === window.currentUserEmail.toLowerCase())
-  );
-
   const editStatus = document.getElementById('editStatus');
-  if (editStatus) {
-    editStatus.value = user.status || 'Active';
-    if (isSelf) {
-      editStatus.disabled = true;
-      editStatus.title = "You cannot change the status of your own account.";
-    } else {
-      editStatus.disabled = false;
-      editStatus.title = "";
-    }
-  }
+  if (editStatus) editStatus.value = user.status || 'Active';
 
   openModal('editModal');
 }
 
 // SECURITY LOGIN AUDIT LOGS MODAL
 function openHistoryModal(userId) {
-  const user = systemUsers.find(u => String(u.user_id) === String(userId));
+  const user = systemUsers.find(u => u.user_id === userId);
   if (!user) return;
 
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
@@ -187,3 +172,55 @@ function openHistoryModal(userId) {
 
   openModal('historyModal');
 }
+
+// ARCHIVE USER ACCOUNT MODAL
+var archiveTargetUserId = null;
+
+function openArchiveUserModal(userId) {
+  const isSuperAdmin = currentUserScope ? !!currentUserScope.is_superadmin : false;
+  const grantedActions = currentUserScope ? (currentUserScope.granted_actions || []) : [];
+  const canDelete = isSuperAdmin || grantedActions.includes('DELETE');
+
+  if (!canDelete) {
+    if (typeof showToast === 'function') showToast('Forbidden. View-only access level cannot delete or archive user accounts.', true);
+    return;
+  }
+
+  const user = systemUsers.find(u => u.user_id === userId);
+  if (!user) return;
+
+  archiveTargetUserId = userId;
+  const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
+  const targetNameEl = document.getElementById('archiveTargetUserName');
+  if (targetNameEl) targetNameEl.innerText = `User: ${fullName} (${user.employee_id})`;
+
+  openModal('archiveModal');
+}
+
+async function confirmArchiveUser() {
+  if (!archiveTargetUserId) return;
+  const targetId = archiveTargetUserId;
+  archiveTargetUserId = null;
+  closeModal('archiveModal');
+
+  try {
+    const response = await fetch(`../../api/employee/users.php?user_id=${targetId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const result = await response.json();
+
+    if (result.status === 'success') {
+      if (typeof showToast === 'function') showToast(result.message || 'User account archived successfully.');
+      if (typeof fetchSystemUsers === 'function') await fetchSystemUsers();
+    } else {
+      if (typeof showToast === 'function') showToast(result.message || 'Failed to archive user account.', true);
+    }
+  } catch (err) {
+    console.error('Error archiving user:', err);
+    if (typeof showToast === 'function') showToast('Failed to archive user account IN DATABASE.', true);
+  }
+}
+
+window.openArchiveUserModal = openArchiveUserModal;
+window.confirmArchiveUser = confirmArchiveUser;

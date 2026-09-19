@@ -10,19 +10,23 @@ $canAccessAccountStatus = !empty($headerUser['is_superadmin']) ||
                           }));
 
 if (!$canAccessAccountStatus) {
-    header("Location: ../dashboard.php");
+    if (!headers_sent()) {
+        header("Location: ../dashboard.php");
+    } else {
+        echo '<script>window.location.href="../dashboard.php";</script>';
+    }
     exit;
 }
 
 include '../../includes/header.php';
 include '../../includes/sidebar.php';
 ?>
-
 <script>
-  window.currentUserId = <?php echo json_encode($_SESSION['user_id'] ?? null); ?>;
+  window.currentUserId     = <?php echo json_encode($_SESSION['user_id']     ?? null); ?>;
   window.currentEmployeeId = <?php echo json_encode($_SESSION['employee_id'] ?? null); ?>;
-  window.currentUserEmail = <?php echo json_encode($_SESSION['email'] ?? null); ?>;
+  window.currentUserEmail  = <?php echo json_encode($_SESSION['email']       ?? null); ?>;
 </script>
+
 
 <main class="flex-1 p-6 md:p-8 w-full space-y-6 overflow-y-auto">
 
@@ -49,165 +53,95 @@ include '../../includes/sidebar.php';
     </div>
   </div>
 
-  <!-- FULL CONTENT SKELETON LOADER -->
-  <div id="accountStatusSkeleton" class="space-y-6 transition-all duration-500 opacity-100 pointer-events-auto">
-    <!-- Status Tabs Skeleton -->
-    <div class="border-b border-slate-200/80 pb-3">
-      <div class="flex items-center gap-6">
-        <div class="skeleton-loader h-7 w-28 rounded-lg"></div>
-        <div class="skeleton-loader h-7 w-24 rounded-lg"></div>
-        <div class="skeleton-loader h-7 w-24 rounded-lg"></div>
-        <div class="skeleton-loader h-7 w-24 rounded-lg"></div>
-        <div class="skeleton-loader h-7 w-24 rounded-lg"></div>
-      </div>
+  <!-- Status Filter Tabs -->
+  <div class="border-b border-slate-200">
+    <nav class="flex flex-wrap -mb-px gap-6 text-xs font-bold text-slate-500">
+      <!-- All Accounts Tab -->
+      <button onclick="switchTab(this, 'all')" class="status-tab border-b-2 border-brand-dark text-brand-dark pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
+        <span>All Accounts</span>
+        <span id="tabCountAll" class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-slate-200/40">0</span>
+      </button>
+
+      <!-- Active Tab -->
+      <button onclick="switchTab(this, 'Active')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
+        <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+        <span>Active</span>
+        <span id="tabCountActive" class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-emerald-100/40">0</span>
+      </button>
+
+      <!-- Inactive Tab -->
+      <button onclick="switchTab(this, 'Deactivated')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
+        <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+        <span>Inactive</span>
+        <span id="tabCountDeactivated" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-black border border-slate-200/40">0</span>
+      </button>
+
+      <!-- Locked Tab -->
+      <button onclick="switchTab(this, 'Locked')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
+        <i class="fa-solid fa-lock text-[10px] text-rose-500"></i>
+        <span>Locked</span>
+        <span id="tabCountLocked" class="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full text-[10px] font-black border border-rose-100/40">0</span>
+      </button>
+
+      <!-- Archived Tab -->
+      <button onclick="switchTab(this, 'Archived')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
+        <i class="fa-solid fa-box-archive text-[10px] text-amber-500"></i>
+        <span>Archived</span>
+        <span id="tabCountArchived" class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-amber-100/40">0</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Search & Action Bar -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+    <!-- Search Bar -->
+    <div class="relative flex-1 max-w-md">
+      <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+      <input type="text" id="statusSearchInput" placeholder="Search by name, email, employee ID..." class="pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs w-full bg-slate-50/50 focus:bg-white focus:outline-none focus:border-brand-medium focus:ring-2 focus:ring-brand-medium/10 transition">
     </div>
 
-    <!-- Search & Action Bar Skeleton -->
-    <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div class="skeleton-loader h-10 w-full max-w-md rounded-xl"></div>
-      <div class="skeleton-loader h-10 w-28 rounded-xl shrink-0"></div>
-    </div>
-
-    <!-- Datatable Skeleton -->
-    <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-50 border-b border-slate-100">
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-28 rounded-md"></div></th>
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-24 rounded-md"></div></th>
-              <th class="px-6 py-4"><div class="skeleton-loader h-3 w-28 rounded-md"></div></th>
-              <th class="px-6 py-4 text-right"><div class="skeleton-loader h-3 w-24 rounded-md ml-auto"></div></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100/80 text-xs">
-            <?php for($s = 0; $s < 5; $s++): ?>
-            <tr class="animate-pulse">
-              <td class="px-6 py-4 flex items-center space-x-3">
-                <div class="skeleton-loader h-9 w-9 rounded-xl shrink-0"></div>
-                <div class="space-y-1.5 w-full">
-                  <div class="skeleton-loader h-3.5 w-36 rounded-md"></div>
-                  <div class="skeleton-loader h-2.5 w-44 rounded-md"></div>
-                </div>
-              </td>
-              <td class="px-6 py-4">
-                <div class="skeleton-loader h-5 w-20 rounded-full"></div>
-              </td>
-              <td class="px-6 py-4">
-                <div class="space-y-1.5">
-                  <div class="skeleton-loader h-3 w-32 rounded-md"></div>
-                  <div class="skeleton-loader h-3 w-28 rounded-md"></div>
-                </div>
-              </td>
-              <td class="px-6 py-4 text-right">
-                <div class="skeleton-loader h-7 w-28 rounded-lg ml-auto"></div>
-              </td>
-            </tr>
-            <?php endfor; ?>
-          </tbody>
-        </table>
-      </div>
-      <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-        <div class="skeleton-loader h-3.5 w-48 rounded-md"></div>
-        <div class="skeleton-loader h-7 w-24 rounded-xl"></div>
-      </div>
+    <!-- Export Button -->
+    <div class="flex items-center gap-2 shrink-0">
+      <button onclick="exportStatusList()" class="border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 cursor-pointer transition">
+        <i class="fa-solid fa-download"></i>
+        <span>Export</span>
+      </button>
     </div>
   </div>
 
-  <!-- REAL PAGE CONTENT -->
-  <div id="accountStatusRealContent" class="space-y-6 hidden opacity-0 transition-all duration-700 ease-out transform translate-y-2">
-    
-    <!-- Status Filter Tabs -->
-    <div class="border-b border-slate-200">
-      <nav class="flex flex-wrap -mb-px gap-6 text-xs font-bold text-slate-500">
-        <!-- All Accounts Tab -->
-        <button onclick="switchTab(this, 'all')" class="status-tab border-b-2 border-brand-dark text-brand-dark pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
-          <span>All Accounts</span>
-          <span id="tabCountAll" class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-slate-200/40">0</span>
-        </button>
-
-        <!-- Active Tab -->
-        <button onclick="switchTab(this, 'Active')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
-          <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-          <span>Active</span>
-          <span id="tabCountActive" class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-emerald-100/40">0</span>
-        </button>
-
-        <!-- Inactive Tab -->
-        <button onclick="switchTab(this, 'Deactivated')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
-          <span class="h-2 w-2 rounded-full bg-slate-400"></span>
-          <span>Inactive</span>
-          <span id="tabCountDeactivated" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-black border border-slate-200/40">0</span>
-        </button>
-
-        <!-- Locked Tab -->
-        <button onclick="switchTab(this, 'Locked')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
-          <i class="fa-solid fa-lock text-[10px] text-rose-500"></i>
-          <span>Locked</span>
-          <span id="tabCountLocked" class="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full text-[10px] font-black border border-rose-100/40">0</span>
-        </button>
-
-        <!-- Archived Tab -->
-        <button onclick="switchTab(this, 'Archived')" class="status-tab border-b-2 border-transparent hover:text-slate-800 pb-3 px-1 flex items-center gap-2 cursor-pointer transition">
-          <i class="fa-solid fa-box-archive text-[10px] text-amber-500"></i>
-          <span>Archived</span>
-          <span id="tabCountArchived" class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-amber-100/40">0</span>
-        </button>
-      </nav>
+  <!-- Account Status Datatable -->
+  <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+            <th class="px-6 py-4">User Details</th>
+            <th class="px-6 py-4">Current Status</th>
+            <th class="px-6 py-4">Security Health</th>
+            <th class="px-6 py-4 text-right">Action Controls</th>
+          </tr>
+        </thead>
+        <tbody id="statusTableBody" class="divide-y divide-slate-100/80 text-xs">
+          <!-- Populated dynamically by JS -->
+        </tbody>
+      </table>
     </div>
 
-    <!-- Search & Action Bar -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-      <!-- Search Bar -->
-      <div class="relative flex-1 max-w-md">
-        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-        <input type="text" id="statusSearchInput" placeholder="Search by name, email, employee ID..." class="pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs w-full bg-slate-50/50 focus:bg-white focus:outline-none focus:border-brand-medium focus:ring-2 focus:ring-brand-medium/10 transition">
+    <!-- Table Footer / Pagination -->
+    <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-400">
+      <div id="statusPaginationText">
+        Showing 0 to 0 of 0 profiles
       </div>
-
-      <!-- Export Button -->
-      <div class="flex items-center gap-2 shrink-0">
-        <button onclick="exportStatusList()" class="border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 cursor-pointer transition">
-          <i class="fa-solid fa-download"></i>
-          <span>Export</span>
+      <div class="flex items-center space-x-1">
+        <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
+          <i class="fa-solid fa-chevron-left text-[9px]"></i>
+        </button>
+        <button class="px-3 py-1.5 rounded-lg bg-brand-light border border-brand-border text-brand-dark font-extrabold">1</button>
+        <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
+          <i class="fa-solid fa-chevron-right text-[9px]"></i>
         </button>
       </div>
     </div>
-
-    <!-- Account Status Datatable -->
-    <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-              <th class="px-6 py-4">User Details</th>
-              <th class="px-6 py-4">Current Status</th>
-              <th class="px-6 py-4">Security Health</th>
-              <th class="px-6 py-4 text-right">Action Controls</th>
-            </tr>
-          </thead>
-          <tbody id="statusTableBody" class="divide-y divide-slate-100/80 text-xs">
-            <!-- Populated dynamically by JS -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Table Footer / Pagination -->
-      <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-400">
-        <div id="statusPaginationText">
-          Showing 0 to 0 of 0 profiles
-        </div>
-        <div class="flex items-center space-x-1">
-          <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
-            <i class="fa-solid fa-chevron-left text-[9px]"></i>
-          </button>
-          <button class="px-3 py-1.5 rounded-lg bg-brand-light border border-brand-border text-brand-dark font-extrabold">1</button>
-          <button class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-not-allowed transition" disabled>
-            <i class="fa-solid fa-chevron-right text-[9px]"></i>
-          </button>
-        </div>
-      </div>
-    </div>
-
   </div>
 
 </main>

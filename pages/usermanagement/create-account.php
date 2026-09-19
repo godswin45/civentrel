@@ -11,7 +11,11 @@ $canCreateAccount = !empty($headerUser['is_superadmin']) ||
                            }));
 
 if (!$canCreateAccount) {
-    header("Location: user-directory.php");
+    if (!headers_sent()) {
+        header("Location: user-directory.php");
+    } else {
+        echo '<script>window.location.href="user-directory.php";</script>';
+    }
     exit;
 }
 

@@ -59,34 +59,17 @@ async function handleCreateUser(e) {
   const fName = document.getElementById('firstName').value.trim();
   const mName = document.getElementById('middleName').value.trim();
   const lName = document.getElementById('lastName').value.trim();
+  const empIdCode = empIdInput ? empIdInput.value.trim() : '';
   const emailVal = document.getElementById('email').value.trim();
   const mobileVal = document.getElementById('mobileNumber') ? document.getElementById('mobileNumber').value.trim() : '';
-
-  // deptId: prefer select value, fall back to currentUserScope (handles disabled selects)
-  const deptIdFromSelect = deptSelect ? parseInt(deptSelect.value) : 0;
-  const deptIdFromScope  = currentUserScope ? parseInt(currentUserScope.department_id) : 0;
-  const deptId = deptIdFromSelect || deptIdFromScope;
-
+  const deptId = parseInt(deptSelect.value) || (currentUserScope ? parseInt(currentUserScope.department_id) : 0);
   const positionTitle = posInput ? posInput.value.trim() : '';
-
-  // Support both numeric IDs (live server) and string IDs like 'TRMG-L' (local fallback)
-  const roleIdRaw = roleSelect ? roleSelect.value : '';
-  const roleId = parseInt(roleIdRaw) || roleIdRaw;
+  const roleId = parseInt(roleSelect.value) || 0;
 
   const roleOpt = roleSelect ? roleSelect.options[roleSelect.selectedIndex] : null;
   const roleName = roleOpt ? (roleOpt.dataset.name || 'User') : 'User';
-  const rolePrefix = roleOpt ? (roleOpt.dataset.prefix || 'EMP') : 'EMP';
 
-  // Auto-generate Employee ID if it was cleared or never set
-  let empIdCode = empIdInput ? empIdInput.value.trim() : '';
-  if (!empIdCode && roleIdRaw) {
-    const year = new Date().getFullYear();
-    const seq  = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
-    empIdCode  = `${rolePrefix}-${year}-${seq}`;
-    if (empIdInput) empIdInput.value = empIdCode;
-  }
-
-  if (!fName || !lName || !emailVal || !mobileVal || !positionTitle || !roleIdRaw) {
+  if (!fName || !lName || !emailVal || !mobileVal || !deptId || !positionTitle || !roleId || !empIdCode) {
     if (typeof showToast === 'function') showToast('Please complete all required fields and generate an Employee ID first.', true);
     return;
   }
