@@ -167,96 +167,107 @@ if ($isSelfProxy) {
         }
 
         if (!$liveUser) {
-            respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
-        }
-
-        // Check if account is locked
-        if (isset($liveUser['status']) && $liveUser['status'] === 'locked') {
-            respond(['status' => 'error', 'message' => 'Your account has been locked due to too many failed attempts. Please contact an administrator.'], 403);
-        }
-
-        $storedHash = $liveUser['password'] ?? '';
-        if (!password_verify($password, $storedHash)) {
-            // Track failed attempts
-            try { $db->query("ALTER TABLE `{$tbl}` ADD COLUMN `failed_attempts` INT DEFAULT 0"); } catch (\Throwable $e) {}
-            $attempts = (int)($liveUser['failed_attempts'] ?? 0) + 1;
+            $remoteHost = parse_url(getenv('EXPO_PUBLIC_API_BASE_URL') ?: 'https://civentral.tech/api/employee', PHP_URL_HOST);
+            $currentHost = $_SERVER['HTTP_HOST'] ?? '';
             
-            if ($attempts >= 3) {
-                try { $db->query("UPDATE `{$tbl}` SET status = 'locked', failed_attempts = ? WHERE (email = ? OR employee_id = ?)", [$attempts, $employeeIdOrEmail, $employeeIdOrEmail]); } catch (\Throwable $e) {}
-                respond(['status' => 'error', 'message' => 'Your account has been locked due to 3 failed attempts. Please contact an administrator.'], 403);
-            } else {
-                try { $db->query("UPDATE `{$tbl}` SET failed_attempts = ? WHERE (email = ? OR employee_id = ?)", [$attempts, $employeeIdOrEmail, $employeeIdOrEmail]); } catch (\Throwable $e) {}
+            // If we are ALREADY on the central server, there is nowhere to fall back to.
+            if ($currentHost === $remoteHost || $currentHost === 'www.' . $remoteHost) {
                 respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
             }
-        }
-
-        // Reset failed attempts on success
-        try {
-            if (isset($liveUser['failed_attempts']) && (int)$liveUser['failed_attempts'] > 0) {
-                $db->query("UPDATE `{$tbl}` SET failed_attempts = 0 WHERE (email = ? OR employee_id = ?)", [$employeeIdOrEmail, $employeeIdOrEmail]);
+            
+            // Otherwise, we are on an LGU node (like revenue.civentral.tech).
+            // We must fall through to the proxyRequest logic at the bottom 
+            // so the Global Super Admin can authenticate against the central server!
+        } else {
+            // Check if account is locked
+            if (isset($liveUser['status']) && $liveUser['status'] === 'locked') {
+                respond(['status' => 'error', 'message' => 'Your account has been locked due to too many failed attempts. Please contact an administrator.'], 403);
             }
-        } catch (\Throwable $e) {}
 
-        // Auth OK — build session
-        $_SESSION['user_id']          = $liveUser['user_id']      ?? $liveUser['id'] ?? null;
-        $_SESSION['employee_id']      = $liveUser['employee_id']  ?? null;
-        $_SESSION['email']            = $liveUser['email']        ?? null;
-        $_SESSION['first_name']       = $liveUser['first_name']   ?? null;
-        $_SESSION['last_name']        = $liveUser['last_name']    ?? null;
-        $_SESSION['role_id']          = $liveUser['role_id']      ?? null;
-        $_SESSION['role_name']        = $liveUser['role_name']    ?? null;
-        $_SESSION['role_prefix']      = $liveUser['role_prefix']  ?? null;
-        $_SESSION['is_superadmin']    = (int)($liveUser['is_superadmin']    ?? 0);
-        $_SESSION['is_global_access'] = (int)($liveUser['is_global_access'] ?? 0);
-        $_SESSION['LAST_ACTIVITY']    = time();
-        $_SESSION['current_user_details'] = $liveUser;
+            $storedHash = $liveUser['password'] ?? '';
+            if (!password_verify($password, $storedHash)) {
+                // Track failed attempts
+                try { $db->query("ALTER TABLE `{$tbl}` ADD COLUMN `failed_attempts` INT DEFAULT 0"); } catch (\Throwable $e) {}
+                $attempts = (int)($liveUser['failed_attempts'] ?? 0) + 1;
+                
+                if ($attempts >= 3) {
+                    try { $db->query("UPDATE `{$tbl}` SET status = 'locked', failed_attempts = ? WHERE (email = ? OR employee_id = ?)", [$attempts, $employeeIdOrEmail, $employeeIdOrEmail]); } catch (\Throwable $e) {}
+                    respond(['status' => 'error', 'message' => 'Your account has been locked due to 3 failed attempts. Please contact an administrator.'], 403);
+                } else {
+                    try { $db->query("UPDATE `{$tbl}` SET failed_attempts = ? WHERE (email = ? OR employee_id = ?)", [$attempts, $employeeIdOrEmail, $employeeIdOrEmail]); } catch (\Throwable $e) {}
+                    respond(['status' => 'error', 'message' => 'Invalid Employee ID / Email or Password.'], 401);
+                }
+            }
 
-        // ── OTP enforcement for ALL accounts (live server) ──────────────
-        $recipientEmail = $liveUser['email'] ?? null;
-        $firstName      = $liveUser['first_name'] ?? 'User';
-        $lastName       = $liveUser['last_name']  ?? '';
-
-        if (!empty($recipientEmail)) {
-            $localOtp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
-            $_SESSION['local_otp_code']    = $localOtp;
-            $_SESSION['local_otp_expires'] = time() + 300;
-            $_SESSION['otp_pending_email'] = $recipientEmail;
-
+            // Reset failed attempts on success
             try {
-                require_once __DIR__ . '/../../config/mailer.php';
-                $subject  = 'CIVENTRAL - Your Login Verification Code';
-                $htmlBody = '
-                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;padding:30px;">
-                    <h2 style="text-align:center;color:#0f172a;margin-top:0;font-size:22px;">CIVENTRAL PORTAL</h2>
-                    <p style="text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;text-transform:uppercase;margin-bottom:30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
-                    <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;">
-                    <p style="color:#475569;font-size:14px;">Hello <strong>' . $firstName . ' ' . $lastName . '</strong>,</p>
-                    <p style="color:#475569;font-size:14px;line-height:1.6;">Your two-factor authentication code for CIVENTRAL Portal login is:</p>
-                    <div style="text-align:center;margin:25px 0;">
-                        <span style="font-size:42px;font-weight:900;font-family:monospace;letter-spacing:12px;color:#0f172a;background:#f8fafc;padding:16px 24px;border-radius:12px;border:2px solid #e2e8f0;display:inline-block;">' . $localOtp . '</span>
-                    </div>
-                    <p style="color:#94a3b8;font-size:12px;text-align:center;">This code expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
-                </div>';
-                sendSystemEmail($recipientEmail, "$firstName $lastName", $subject, $htmlBody);
-            } catch (\Throwable $e) {
-                error_log('OTP email failed: ' . $e->getMessage());
+                if (isset($liveUser['failed_attempts']) && (int)$liveUser['failed_attempts'] > 0) {
+                    $db->query("UPDATE `{$tbl}` SET failed_attempts = 0 WHERE (email = ? OR employee_id = ?)", [$employeeIdOrEmail, $employeeIdOrEmail]);
+                }
+            } catch (\Throwable $e) {}
+
+            // Auth OK — build session
+            $_SESSION['user_id']          = $liveUser['user_id']      ?? $liveUser['id'] ?? null;
+            $_SESSION['employee_id']      = $liveUser['employee_id']  ?? null;
+            $_SESSION['email']            = $liveUser['email']        ?? null;
+            $_SESSION['first_name']       = $liveUser['first_name']   ?? null;
+            $_SESSION['last_name']        = $liveUser['last_name']    ?? null;
+            $_SESSION['role_id']          = $liveUser['role_id']      ?? null;
+            $_SESSION['role_name']        = $liveUser['role_name']    ?? null;
+            $_SESSION['role_prefix']      = $liveUser['role_prefix']  ?? null;
+            $_SESSION['is_superadmin']    = (int)($liveUser['is_superadmin']    ?? 0);
+            $_SESSION['is_global_access'] = (int)($liveUser['is_global_access'] ?? 0);
+            $_SESSION['LAST_ACTIVITY']    = time();
+            $_SESSION['current_user_details'] = $liveUser;
+
+            // ── OTP enforcement for ALL accounts (live server) ──────────────
+            $recipientEmail = $liveUser['email'] ?? null;
+            $firstName      = $liveUser['first_name'] ?? 'User';
+            $lastName       = $liveUser['last_name']  ?? '';
+
+            if (!empty($recipientEmail)) {
+                $localOtp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+                $_SESSION['local_otp_code']    = $localOtp;
+                $_SESSION['local_otp_expires'] = time() + 300;
+                $_SESSION['otp_pending_email'] = $recipientEmail;
+
+                try {
+                    require_once __DIR__ . '/../../config/mailer.php';
+                    $subject  = 'CIVENTRAL - Your Login Verification Code';
+                    $htmlBody = '
+                    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;padding:30px;">
+                        <h2 style="text-align:center;color:#0f172a;margin-top:0;font-size:22px;">CIVENTRAL PORTAL</h2>
+                        <p style="text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;text-transform:uppercase;margin-bottom:30px;">CALOOCAN MUNICIPAL MANAGEMENT SYSTEM</p>
+                        <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;">
+                        <p style="color:#475569;font-size:14px;">Hello <strong>' . $firstName . ' ' . $lastName . '</strong>,</p>
+                        <p style="color:#475569;font-size:14px;line-height:1.6;">Your two-factor authentication code for CIVENTRAL Portal login is:</p>
+                        <div style="text-align:center;margin:25px 0;">
+                            <span style="font-size:42px;font-weight:900;font-family:monospace;letter-spacing:12px;color:#0f172a;background:#f8fafc;padding:16px 24px;border-radius:12px;border:2px solid #e2e8f0;display:inline-block;">' . $localOtp . '</span>
+                        </div>
+                        <p style="color:#94a3b8;font-size:12px;text-align:center;">This code expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
+                    </div>';
+                    sendSystemEmail($recipientEmail, "$firstName $lastName", $subject, $htmlBody);
+                } catch (\Throwable $e) {
+                    error_log('OTP email failed: ' . $e->getMessage());
+                }
+
+                respond([
+                    'status'  => 'otp_required',
+                    'message' => 'A verification code has been sent to your email.',
+                    'email'   => $recipientEmail,
+                    'source'  => 'local',
+                    'user'    => $liveUser,
+                ]);
             }
 
+            // Fallback if no email on record
             respond([
-                'status'  => 'otp_required',
-                'message' => 'A verification code has been sent to your email.',
-                'email'   => $recipientEmail,
-                'source'  => 'local',
+                'status'  => 'success',
+                'message' => 'Login successful.',
                 'user'    => $liveUser,
             ]);
         }
 
-        // Fallback if no email on record
-        respond([
-            'status'  => 'success',
-            'message' => 'Login successful.',
-            'user'    => $liveUser,
-        ]);
     } catch (\Throwable $e) {
         respond(['status' => 'error', 'message' => 'Authentication service unavailable. ' . $e->getMessage()], 503);
     }
