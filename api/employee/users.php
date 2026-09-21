@@ -185,6 +185,18 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
             'message' => 'Forbidden. You are not allowed to deactivate, lock, or archive your own account.'
         ], 403);
     }
+    
+    $targetUserIdStr = trim($data['user_id'] ?? '');
+    if (strpos($targetUserIdStr, 'LOCAL-') === 0) {
+        try {
+            require_once __DIR__ . '/../../config/database.php';
+            $db = Database::getInstance();
+            $db->query("UPDATE local_users SET status = ? WHERE user_id = ?", [$newStatus, $targetUserIdStr]);
+            respond(['status' => 'success', 'message' => 'Local user status updated successfully']);
+        } catch (\Throwable $e) {
+            respond(['status' => 'error', 'message' => 'Failed to update local user: ' . $e->getMessage()], 500);
+        }
+    }
 }
 
 // ── Helper: send the account-credentials email ───────────────────

@@ -43,6 +43,7 @@ async function fetchAccountStatusUsers() {
 
         // Map status
         let userStatus = u.status || 'Active';
+        userStatus = userStatus.charAt(0).toUpperCase() + userStatus.slice(1).toLowerCase();
         if (userStatus === 'Inactive') userStatus = 'Deactivated';
 
         return {
