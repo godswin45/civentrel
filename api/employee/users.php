@@ -28,7 +28,7 @@ $db = Database::getInstance();
 
 // Initialize local_feature_permissions table for ALL requests
 try {
-    $db->query("CREATE TABLE IF NOT EXISTS local_feature_permissions (
+    $db->exec("CREATE TABLE IF NOT EXISTS local_feature_permissions (
         user_id VARCHAR(64) PRIMARY KEY,
         permissions_json TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -77,7 +77,7 @@ function assignDefaultPermissions($employeeId, $rolePrefix) {
             require_once __DIR__ . '/../../config/database.php';
             $db = Database::getInstance();
             $json = json_encode($perms);
-            $db->query("INSERT INTO local_feature_permissions (user_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$employeeId, $json]);
+            $db->exec("INSERT INTO local_feature_permissions (user_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$employeeId, $json]);
         } catch (\Throwable $e) { }
     }
 }
@@ -228,7 +228,7 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
             require_once __DIR__ . '/../../config/database.php';
             $db = Database::getInstance();
             $permissionsJson = is_array($data['feature_permissions']) ? json_encode($data['feature_permissions']) : $data['feature_permissions'];
-            $db->query("INSERT INTO local_feature_permissions (user_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$targetIdentifier, $permissionsJson]);
+            $db->exec("INSERT INTO local_feature_permissions (user_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$targetIdentifier, $permissionsJson]);
         } catch (\Throwable $e) {
             error_log('Failed to save feature permissions: ' . $e->getMessage());
         }
@@ -246,7 +246,7 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
         try {
             require_once __DIR__ . '/../../config/database.php';
             $db = Database::getInstance();
-            $db->query("UPDATE local_users SET status = ? WHERE user_id = ?", [$newStatus, $targetUserIdStr]);
+            $db->exec("UPDATE local_users SET status = ? WHERE user_id = ?", [$newStatus, $targetUserIdStr]);
             respond(['status' => 'success', 'message' => 'Local user status updated successfully']);
         } catch (\Throwable $e) {
             respond(['status' => 'error', 'message' => 'Failed to update local user: ' . $e->getMessage()], 500);

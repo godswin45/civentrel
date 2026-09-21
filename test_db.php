@@ -1,13 +1,15 @@
 <?php
-require_once __DIR__ . '/config/database.php';
-$db = Database::getInstance();
+$_SERVER['REQUEST_METHOD'] = 'PUT';
+$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+$body = '{"user_id":"LOCAL-B6FE81DEC025", "status":"active", "feature_permissions":["test"]}';
+// Mock php://input
+file_put_contents('php://memory', $body);
+// It's hard to mock php://input, let's just assign $body manually in users.php?
+// Wait, users.php reads file_get_contents('php://input').
+// Let's just create a temporary file and read from it in users.php? No, we can't edit users.php just for testing.
+// Let's try to just capture any parse errors.
 try {
-    $db->query("CREATE TABLE IF NOT EXISTS local_feature_permissions (
-        user_id VARCHAR(64) PRIMARY KEY,
-        permissions_json TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
-    echo "Table created successfully.";
+    require_once __DIR__ . '/api/employee/users.php';
 } catch (\Throwable $e) {
-    echo "Error: " . $e->getMessage();
+    echo "Caught: " . $e->getMessage();
 }
