@@ -524,7 +524,7 @@ if (($liveBody['status'] ?? '') === 'success' && $method === 'GET') {
         try {
             $rawPerms = $db->query('SELECT * FROM local_feature_permissions', []) ?: [];
             foreach ($rawPerms as $p) {
-                $permissions[$p['employee_id']] = json_decode($p['permissions_json'], true) ?: [];
+                $permissions[$p['user_id']] = json_decode($p['permissions_json'], true) ?: [];
             }
         } catch (\Throwable $e) { /* Ignore if table doesnt exist */ }
 
