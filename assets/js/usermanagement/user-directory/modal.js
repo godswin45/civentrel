@@ -222,5 +222,10 @@ async function confirmArchiveUser() {
   }
 }
 
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.openViewModal = openViewModal;
+window.openEditModal = openEditModal;
+window.openHistoryModal = openHistoryModal;
 window.openArchiveUserModal = openArchiveUserModal;
 window.confirmArchiveUser = confirmArchiveUser;
