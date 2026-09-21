@@ -125,10 +125,19 @@ function openEditModal(userId) {
   if (typeof updatePositionDropdown === 'function') updatePositionDropdown(currentDeptId, currentPosId);
 
   const editRole = document.getElementById('editRole');
-  if (editRole) editRole.value = user.role_id || '';
+  if (editRole) {
+    const rId = user.role_id || (user.roles ? user.roles.role_id : '');
+    // Fallback to finding matching option by value
+    const match = Array.from(editRole.options).find(o => o.value == rId);
+    editRole.value = match ? match.value : '';
+  }
 
   const editStatus = document.getElementById('editStatus');
-  if (editStatus) editStatus.value = user.status || 'Active';
+  if (editStatus) {
+    const rawStatus = (user.status || 'Active').toLowerCase();
+    const match = Array.from(editStatus.options).find(o => o.value.toLowerCase() === rawStatus);
+    editStatus.value = match ? match.value : 'Active';
+  }
 
   // Initialize Feature Permissions Toggles
   const featureCheckboxes = document.querySelectorAll('#editFeaturePermissions input[type="checkbox"]');

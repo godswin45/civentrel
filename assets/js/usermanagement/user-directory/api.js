@@ -37,20 +37,20 @@ async function fetchUsersData() {
 async function handleEditStaff(e) {
   e.preventDefault();
 
-  const userId = parseInt(document.getElementById('editEmpIdRef').value);
+  const userId = document.getElementById('editEmpIdRef').value;
   if (!userId) return;
 
   const nameInput = document.getElementById('editName').value.trim();
   const email = document.getElementById('editEmail').value.trim();
   const phone = document.getElementById('editPhone').value.trim();
   const positionId = parseInt(document.getElementById('editPosition').value) || 0;
-  const roleId = parseInt(document.getElementById('editRole').value) || 0;
+  const roleId = document.getElementById('editRole').value;
   const status = document.getElementById('editStatus').value;
 
   const featureCheckboxes = document.querySelectorAll('#editFeaturePermissions input[type="checkbox"]:checked');
   const featurePermissions = Array.from(featureCheckboxes).map(cb => cb.value);
 
-  const user = systemUsers.find(u => u.user_id === userId);
+  const user = systemUsers.find(u => u.user_id == userId);
   const isSelf = (
     (window.currentUserId && userId == window.currentUserId) ||
     (user && (
