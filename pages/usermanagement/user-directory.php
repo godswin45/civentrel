@@ -415,6 +415,8 @@ include '../../includes/sidebar.php';
       </div>
     </form>
   </div>
+</div>
+
 <!-- CONFIRM ARCHIVE USER MODAL -->
 <div id="archiveModal" class="fixed inset-0 z-50 flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300 bg-slate-900/60 backdrop-blur-xs">
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden transform scale-95 transition-all duration-300">
