@@ -204,18 +204,18 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
     $targetUserId = intval($data['user_id'] ?? 0);
     $targetUserIdStr = trim($data['user_id'] ?? '');
     
-    // We need employee_id to save feature permissions
-    $targetEmployeeId = trim($data['employee_id'] ?? '');
+    // We prefer user_id for saving feature permissions (using the employee_id column as a generic identifier)
+    $targetIdentifier = $targetUserIdStr !== '' ? $targetUserIdStr : trim($data['employee_id'] ?? '');
     
     $currentUserId = intval($_SESSION['user_id'] ?? 0);
     
     // Save Feature Permissions if provided
-    if (isset($data['feature_permissions']) && $targetEmployeeId !== '') {
+    if (isset($data['feature_permissions']) && $targetIdentifier !== '') {
         try {
             require_once __DIR__ . '/../../config/database.php';
             $db = Database::getInstance();
             $permissionsJson = is_array($data['feature_permissions']) ? json_encode($data['feature_permissions']) : $data['feature_permissions'];
-            $db->query("INSERT INTO local_feature_permissions (employee_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$targetEmployeeId, $permissionsJson]);
+            $db->query("INSERT INTO local_feature_permissions (employee_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$targetIdentifier, $permissionsJson]);
         } catch (\Throwable $e) {
             error_log('Failed to save feature permissions: ' . $e->getMessage());
         }
@@ -468,7 +468,9 @@ if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['
         } catch (\Throwable $e) { /* Ignore if table doesnt exist */ }
 
         $localUsers = array_map(function($u) use ($fallbackDepartments, $permissions) {
-            $u['feature_permissions'] = $permissions[$u['employee_id']] ?? [];
+            $empId = $u['employee_id'] ?? '';
+            $uId = $u['user_id'] ?? '';
+            $u['feature_permissions'] = $permissions[$uId] ?? $permissions[$empId] ?? [];
             $u['roles'] = [
                 'role_id' => $u['role_id'],
                 'role_name' => $u['role_name'],
@@ -558,9 +560,9 @@ if (($liveBody['status'] ?? '') === 'success' && $method === 'GET') {
         
         // Append feature_permissions to ALL users (live and local)
         foreach ($merged as &$u) {
-            if (isset($u['employee_id'])) {
-                $u['feature_permissions'] = $permissions[$u['employee_id']] ?? [];
-            }
+            $empId = $u['employee_id'] ?? '';
+            $uId = $u['user_id'] ?? '';
+            $u['feature_permissions'] = $permissions[$uId] ?? $permissions[$empId] ?? [];
         }
         unset($u);
         
