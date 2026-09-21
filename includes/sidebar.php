@@ -104,6 +104,10 @@
           </a>
 
           <!-- Budget Management Dropdown -->
+          <?php 
+            $canAccessBudget = $isSuperAdmin || $hasResourceAccess(['budget', 'approval', 'treasury']);
+            if ($canAccessBudget): 
+          ?>
           <div class="space-y-1">
             <button onclick="toggleDropdown('budgetDropdown', 'budgetChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo (in_array($currentPage, ['budget-approvals.php', 'index.php', 'my-requests.php']) && strpos($_SERVER['PHP_SELF'], '/budget') !== false) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
               <div class="flex items-center space-x-3">
@@ -120,6 +124,7 @@
               <a href="<?php echo $basePath ?? '../'; ?>pages/budget/my-requests.php" class="flex items-center space-x-2 px-3 py-2 text-[11px] rounded-md transition <?php echo $currentPage == 'my-requests.php' ? 'text-brand-medium font-black bg-white border border-brand-border/40 shadow-xs' : 'text-slate-500 hover:text-brand-dark'; ?>"><i class="fa-solid fa-file-invoice text-[10px] <?php echo $currentPage == 'my-requests.php' ? 'text-brand-medium' : 'opacity-50'; ?>"></i> <span>Department Requests</span></a>
             </div>
           </div>
+          <?php endif; ?>
 
           <!-- Business Tax & Licensing Dropdown -->
           <div class="space-y-1">

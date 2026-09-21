@@ -364,6 +364,61 @@ include '../../includes/sidebar.php';
               </select>
             </div>
           </div>
+
+          <!-- Feature Permissions -->
+          <div class="pt-4 mt-2 border-t border-slate-100 space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Feature Access Permissions</label>
+              <span class="text-[9px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded-full">Optional</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="editFeaturePermissions">
+              <!-- Treasury -->
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Revenue Collection</span>
+                <input type="checkbox" name="feature_permissions" value="revenue_collection" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Disbursements</span>
+                <input type="checkbox" name="feature_permissions" value="disbursements" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Business Tax & Permits</span>
+                <input type="checkbox" name="feature_permissions" value="business_tax" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Market Stall Leasing</span>
+                <input type="checkbox" name="feature_permissions" value="market_stall" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Financial Reports</span>
+                <input type="checkbox" name="feature_permissions" value="financial_reports" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              
+              <!-- Budget -->
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Budget Approvals</span>
+                <input type="checkbox" name="feature_permissions" value="budget_approvals" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Department Requests</span>
+                <input type="checkbox" name="feature_permissions" value="department_requests" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+
+              <!-- Admin -->
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">User Management</span>
+                <input type="checkbox" name="feature_permissions" value="user_management" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Citizen Management</span>
+                <input type="checkbox" name="feature_permissions" value="citizen_management" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+              <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                <span class="text-xs font-bold text-slate-700">Audit Logs</span>
+                <input type="checkbox" name="feature_permissions" value="audit_logs" class="feature-toggle accent-brand-medium w-4 h-4 cursor-pointer">
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 

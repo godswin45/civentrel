@@ -45,6 +45,30 @@ if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
 $currentHost   = strtolower($_SERVER['HTTP_HOST'] ?? '');
 $remoteHost    = strtolower(parse_url($apiBaseUrl, PHP_URL_HOST) ?? '');
 
+function assignDefaultPermissions($employeeId, $rolePrefix) {
+    if (!$employeeId) return;
+    $perms = [];
+    $prefix = strtoupper($rolePrefix);
+    
+    // Define defaults based on the user's role/prefix
+    if (in_array($prefix, ['TRMG', 'TRES', 'CASH', 'TSTA', 'RCOL'])) {
+        $perms = ['revenue_collection', 'disbursements', 'business_tax', 'market_stall', 'financial_reports'];
+    } elseif ($prefix === 'BDGT') {
+        $perms = ['budget_approvals', 'department_requests'];
+    } elseif (in_array($prefix, ['SADM', 'SA', 'ADM', 'DADM'])) {
+        $perms = ['revenue_collection', 'disbursements', 'business_tax', 'market_stall', 'financial_reports', 'budget_approvals', 'department_requests', 'user_management', 'citizen_management', 'audit_logs'];
+    }
+
+    if (!empty($perms)) {
+        try {
+            require_once __DIR__ . '/../../config/database.php';
+            $db = Database::getInstance();
+            $json = json_encode($perms);
+            $db->query("INSERT INTO local_feature_permissions (employee_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$employeeId, $json]);
+        } catch (\Throwable $e) { }
+    }
+}
+
 // Only treat as self-proxy if we are ACTUALLY on the central server (civentral.tech)
 $isSelfProxy   = ($currentHost !== '' && ($currentHost === $remoteHost || $currentHost === 'www.' . $remoteHost));
 
@@ -126,6 +150,7 @@ if ($isSelfProxy && $method === 'POST') {
             error_log('Credentials email failed: ' . $mailErr->getMessage());
         }
 
+        assignDefaultPermissions($eI, $rP);
         respond([
             'status'        => 'success',
             'message'       => 'Account created successfully. Credentials sent to email.',
@@ -177,7 +202,25 @@ if ($method === 'POST') {
 if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
     $data = json_decode($body, true);
     $targetUserId = intval($data['user_id'] ?? 0);
+    $targetUserIdStr = trim($data['user_id'] ?? '');
+    
+    // We need employee_id to save feature permissions
+    $targetEmployeeId = trim($data['employee_id'] ?? '');
+    
     $currentUserId = intval($_SESSION['user_id'] ?? 0);
+    
+    // Save Feature Permissions if provided
+    if (isset($data['feature_permissions']) && $targetEmployeeId !== '') {
+        try {
+            require_once __DIR__ . '/../../config/database.php';
+            $db = Database::getInstance();
+            $permissionsJson = is_array($data['feature_permissions']) ? json_encode($data['feature_permissions']) : $data['feature_permissions'];
+            $db->query("INSERT INTO local_feature_permissions (employee_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$targetEmployeeId, $permissionsJson]);
+        } catch (\Throwable $e) {
+            error_log('Failed to save feature permissions: ' . $e->getMessage());
+        }
+    }
+
     $newStatus = strtolower(trim($data['status'] ?? ''));
     if ($targetUserId > 0 && $currentUserId > 0 && $targetUserId === $currentUserId && in_array($newStatus, ['inactive', 'deactivated', 'locked', 'archived'])) {
         respond([
@@ -186,7 +229,6 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
         ], 403);
     }
     
-    $targetUserIdStr = trim($data['user_id'] ?? '');
     if (strpos($targetUserIdStr, 'LOCAL-') === 0) {
         try {
             require_once __DIR__ . '/../../config/database.php';
@@ -249,6 +291,13 @@ function saveLocalUser($pd, $rId, $rN, $rP, $tP = null) {
         status VARCHAR(30) DEFAULT 'active', is_superadmin TINYINT DEFAULT 0,
         is_global_access TINYINT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
+    
+    // Create local feature permissions table for BOTH local and live users
+    $db->query("CREATE TABLE IF NOT EXISTS local_feature_permissions (
+        employee_id VARCHAR(64) PRIMARY KEY,
+        permissions_json TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
 
     $fN = trim($pd['first_name']  ?? '');
     $mN = trim($pd['middle_name'] ?? '');
@@ -298,6 +347,7 @@ if ($method === 'POST') {
         if ($tempPass && $fN && $lN && $em) {
             sendCredentialsEmail($em, $fN, $lN, $eI, $tempPass);
         }
+        assignDefaultPermissions($eI, $rP);
         respond($liveResult['body'], $liveResult['code']);
     }
 
@@ -320,6 +370,7 @@ if ($method === 'POST') {
                 if ($tempPass && $fN && $lN && $em) {
                     sendCredentialsEmail($em, $fN, $lN, $eI, $tempPass);
                 }
+                assignDefaultPermissions($eI, $rP);
                 respond($retryResult['body'], $retryResult['code']);
             }
         }
@@ -331,6 +382,7 @@ if ($method === 'POST') {
         $rNFallback = $rN ?: str_replace('-L', '', (string)$rId);
         [$fN2, $lN2, $eI2, $em2, $tP2] = saveLocalUser($pd, $rId, $rNFallback, $rP);
         sendCredentialsEmail($em2, $fN2, $lN2, $eI2, $tP2);
+        assignDefaultPermissions($eI2, $rP);
         respond([
             'status'        => 'success',
             'message'       => 'Account created locally (live server unavailable). Credentials sent to email. Note: This account will only work on this local server.',
@@ -406,7 +458,17 @@ if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['
         require_once __DIR__ . '/../../config/database.php';
         $db = Database::getInstance();
         $rawLocalUsers = $db->query('SELECT * FROM local_users ORDER BY created_at DESC', []) ?: [];
-        $localUsers = array_map(function($u) use ($fallbackDepartments) {
+        
+        $permissions = [];
+        try {
+            $rawPerms = $db->query('SELECT * FROM local_feature_permissions', []) ?: [];
+            foreach ($rawPerms as $p) {
+                $permissions[$p['employee_id']] = json_decode($p['permissions_json'], true) ?: [];
+            }
+        } catch (\Throwable $e) { /* Ignore if table doesnt exist */ }
+
+        $localUsers = array_map(function($u) use ($fallbackDepartments, $permissions) {
+            $u['feature_permissions'] = $permissions[$u['employee_id']] ?? [];
             $u['roles'] = [
                 'role_id' => $u['role_id'],
                 'role_name' => $u['role_name'],
@@ -449,7 +511,17 @@ if (($liveBody['status'] ?? '') === 'success' && $method === 'GET') {
     try {
         require_once __DIR__ . '/../../config/database.php';
         $db = Database::getInstance();
+        
+        $permissions = [];
+        try {
+            $rawPerms = $db->query('SELECT * FROM local_feature_permissions', []) ?: [];
+            foreach ($rawPerms as $p) {
+                $permissions[$p['employee_id']] = json_decode($p['permissions_json'], true) ?: [];
+            }
+        } catch (\Throwable $e) { /* Ignore if table doesnt exist */ }
+
         $localUsers = $db->query('SELECT * FROM local_users ORDER BY created_at DESC', []) ?: [];
+        $mappedLocalUsers = [];
         if (!empty($localUsers)) {
             // Map flat structure to nested structure expected by frontend
             $mappedLocalUsers = array_map(function($u) {
@@ -479,10 +551,21 @@ if (($liveBody['status'] ?? '') === 'success' && $method === 'GET') {
                 }
                 return $u;
             }, $localUsers);
-            
-            $existing = $liveBody['data'] ?? $liveBody['users'] ?? [];
-            $liveBody['data'] = array_merge($existing, $mappedLocalUsers);
         }
+        
+        $existing = $liveBody['data'] ?? $liveBody['users'] ?? [];
+        $merged = array_merge($existing, $mappedLocalUsers);
+        
+        // Append feature_permissions to ALL users (live and local)
+        foreach ($merged as &$u) {
+            if (isset($u['employee_id'])) {
+                $u['feature_permissions'] = $permissions[$u['employee_id']] ?? [];
+            }
+        }
+        unset($u);
+        
+        $liveBody['data'] = $merged;
+        
     } catch (\Throwable $e) { /* table may not exist yet */ }
 }
 respond($liveBody, $result['code']);

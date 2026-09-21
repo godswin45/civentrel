@@ -1,0 +1,1 @@
+<?php require_once __DIR__ . "/../config/database.php"; try { $db = Database::getInstance(); $db->query("DELETE FROM local_users"); echo "Successfully deleted all accounts from local_users table.\n"; } catch (\Throwable $e) { echo "Error: " . $e->getMessage() . "\n"; }

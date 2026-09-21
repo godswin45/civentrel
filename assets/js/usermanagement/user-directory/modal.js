@@ -130,6 +130,13 @@ function openEditModal(userId) {
   const editStatus = document.getElementById('editStatus');
   if (editStatus) editStatus.value = user.status || 'Active';
 
+  // Initialize Feature Permissions Toggles
+  const featureCheckboxes = document.querySelectorAll('#editFeaturePermissions input[type="checkbox"]');
+  const userPerms = user.feature_permissions || [];
+  featureCheckboxes.forEach(cb => {
+    cb.checked = userPerms.includes(cb.value);
+  });
+
   openModal('editModal');
 }
 

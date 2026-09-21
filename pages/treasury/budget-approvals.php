@@ -12,6 +12,28 @@ $activePage = 'budget-approvals';
 $errorMsg = null;
 $successMsg = null;
 
+// Permission Check: Only Superadmin or users with 'budget' or 'approval' resource access can view this page
+$isSuperAdmin = !empty($_SESSION['is_superadmin']) || !empty($_SESSION['is_global_access']);
+$userGrantedRes = $_SESSION['current_user_details']['granted_resources'] ?? [];
+
+$hasResourceAccess = function($keywords) use ($isSuperAdmin, $userGrantedRes) {
+    if ($isSuperAdmin) return true;
+    if (empty($userGrantedRes)) return false;
+    if (is_string($keywords)) $keywords = [$keywords];
+    foreach ($userGrantedRes as $resName) {
+        $resLower = strtolower($resName);
+        foreach ($keywords as $kw) {
+            if (strpos($resLower, strtolower($kw)) !== false) return true;
+        }
+    }
+    return false;
+};
+
+if (!$hasResourceAccess(['budget', 'approval', 'treasury'])) {
+    header('Location: index.php?error=Unauthorized+Access');
+    exit;
+}
+
 // Handle approve/reject actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     try {

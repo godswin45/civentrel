@@ -47,6 +47,9 @@ async function handleEditStaff(e) {
   const roleId = parseInt(document.getElementById('editRole').value) || 0;
   const status = document.getElementById('editStatus').value;
 
+  const featureCheckboxes = document.querySelectorAll('#editFeaturePermissions input[type="checkbox"]:checked');
+  const featurePermissions = Array.from(featureCheckboxes).map(cb => cb.value);
+
   const user = systemUsers.find(u => u.user_id === userId);
   const isSelf = (
     (window.currentUserId && userId == window.currentUserId) ||
@@ -64,16 +67,19 @@ async function handleEditStaff(e) {
   const nameParts = nameInput.split(/\s+/);
   const firstName = nameParts[0] || '';
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+  const employeeId = user ? user.employee_id : '';
 
   const payload = {
     user_id: userId,
+    employee_id: employeeId,
     first_name: firstName,
     last_name: lastName,
     email: email,
     mobile_number: phone,
     role_id: roleId,
     position_id: positionId,
-    status: status
+    status: status,
+    feature_permissions: featurePermissions
   };
 
   try {
