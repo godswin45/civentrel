@@ -23,6 +23,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
+require_once __DIR__ . '/../../config/database.php';
+$db = Database::getInstance();
+
+// Initialize local_feature_permissions table for ALL requests
+try {
+    $db->query("CREATE TABLE IF NOT EXISTS local_feature_permissions (
+        user_id VARCHAR(64) PRIMARY KEY,
+        permissions_json TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
+} catch (\Throwable $e) { /* Ignore */ }
+
+// Include the proxy functionality
 require_once __DIR__ . '/../../config/proxy.php';
 function respond(array $payload, int $statusCode = 200): void {
     http_response_code($statusCode);
@@ -290,13 +303,6 @@ function saveLocalUser($pd, $rId, $rN, $rP, $tP = null) {
         password VARCHAR(255), temp_password VARCHAR(100),
         status VARCHAR(30) DEFAULT 'active', is_superadmin TINYINT DEFAULT 0,
         is_global_access TINYINT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
-    
-    // Create local feature permissions table for BOTH local and live users
-    $db->query("CREATE TABLE IF NOT EXISTS local_feature_permissions (
-        user_id VARCHAR(64) PRIMARY KEY,
-        permissions_json TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
 
     $fN = trim($pd['first_name']  ?? '');
