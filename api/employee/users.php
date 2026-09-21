@@ -64,7 +64,7 @@ function assignDefaultPermissions($employeeId, $rolePrefix) {
             require_once __DIR__ . '/../../config/database.php';
             $db = Database::getInstance();
             $json = json_encode($perms);
-            $db->query("INSERT INTO local_feature_permissions (employee_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$employeeId, $json]);
+            $db->query("INSERT INTO local_feature_permissions (user_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$employeeId, $json]);
         } catch (\Throwable $e) { }
     }
 }
@@ -204,7 +204,7 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
     $targetUserId = intval($data['user_id'] ?? 0);
     $targetUserIdStr = trim($data['user_id'] ?? '');
     
-    // We prefer user_id for saving feature permissions (using the employee_id column as a generic identifier)
+    // We prefer user_id for saving feature permissions (using the user_id column as a generic identifier)
     $targetIdentifier = $targetUserIdStr !== '' ? $targetUserIdStr : trim($data['employee_id'] ?? '');
     
     $currentUserId = intval($_SESSION['user_id'] ?? 0);
@@ -215,7 +215,7 @@ if (in_array($method, ['PUT', 'PATCH']) && !empty($body)) {
             require_once __DIR__ . '/../../config/database.php';
             $db = Database::getInstance();
             $permissionsJson = is_array($data['feature_permissions']) ? json_encode($data['feature_permissions']) : $data['feature_permissions'];
-            $db->query("INSERT INTO local_feature_permissions (employee_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$targetIdentifier, $permissionsJson]);
+            $db->query("INSERT INTO local_feature_permissions (user_id, permissions_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE permissions_json = VALUES(permissions_json)", [$targetIdentifier, $permissionsJson]);
         } catch (\Throwable $e) {
             error_log('Failed to save feature permissions: ' . $e->getMessage());
         }
@@ -294,7 +294,7 @@ function saveLocalUser($pd, $rId, $rN, $rP, $tP = null) {
     
     // Create local feature permissions table for BOTH local and live users
     $db->query("CREATE TABLE IF NOT EXISTS local_feature_permissions (
-        employee_id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) PRIMARY KEY,
         permissions_json TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []);
@@ -463,7 +463,7 @@ if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['
         try {
             $rawPerms = $db->query('SELECT * FROM local_feature_permissions', []) ?: [];
             foreach ($rawPerms as $p) {
-                $permissions[$p['employee_id']] = json_decode($p['permissions_json'], true) ?: [];
+                $permissions[$p['user_id']] = json_decode($p['permissions_json'], true) ?: [];
             }
         } catch (\Throwable $e) { /* Ignore if table doesnt exist */ }
 
