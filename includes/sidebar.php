@@ -92,20 +92,24 @@
           </a>
 
           <!-- Revenue Collection -->
+          <?php if ($isSuperAdmin || $hasResourceAccess(['revenue collection'])): ?>
           <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/collection.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'collection.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-cash-register text-sm <?php echo $currentPage == 'collection.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Revenue Collection</span>
           </a>
+          <?php endif; ?>
 
           <!-- Disbursement & Vouchers -->
+          <?php if ($isSuperAdmin || $hasResourceAccess(['disbursements'])): ?>
           <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/disbursement.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'disbursement.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-hand-holding-dollar text-sm <?php echo $currentPage == 'disbursement.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Disbursements & Vouchers</span>
           </a>
+          <?php endif; ?>
 
           <!-- Budget Management Dropdown -->
           <?php 
-            $canAccessBudget = $isSuperAdmin || $hasResourceAccess(['budget', 'approval', 'treasury']);
+            $canAccessBudget = $isSuperAdmin || $hasResourceAccess(['budget', 'approval', 'treasury', 'budget approvals', 'department requests']);
             if ($canAccessBudget): 
           ?>
           <div class="space-y-1">
@@ -127,6 +131,7 @@
           <?php endif; ?>
 
           <!-- Business Tax & Licensing Dropdown -->
+          <?php if ($isSuperAdmin || $hasResourceAccess(['business tax'])): ?>
           <div class="space-y-1">
             <button onclick="toggleDropdown('businessTaxDropdown', 'businessTaxChevron')" class="dropdown-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, ['business-tax.php', 'business.php']) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
               <div class="flex items-center space-x-3">
@@ -142,24 +147,31 @@
               <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/business.php" class="flex items-center space-x-2 px-3 py-2 text-[11px] rounded-md transition <?php echo $currentPage == 'business.php' ? 'text-brand-medium font-black bg-white border border-brand-border/40 shadow-xs' : 'text-slate-500 hover:text-brand-dark'; ?>"><i class="fa-solid fa-briefcase text-[10px] <?php echo $currentPage == 'business.php' ? 'text-brand-medium' : 'opacity-50'; ?>"></i> <span>Business Applications</span></a>
             </div>
           </div>
+          <?php endif; ?>
 
           <!-- Market Stall Management -->
+          <?php if ($isSuperAdmin || $hasResourceAccess(['market stall'])): ?>
           <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/market-stall.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'market-stall.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-store text-sm <?php echo $currentPage == 'market-stall.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Market Stall Leasing</span>
           </a>
+          <?php endif; ?>
 
           <!-- Online Payments -->
+          <?php if ($isSuperAdmin || $hasResourceAccess(['online payment', 'online payments', 'online payment gateway'])): ?>
           <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/online-payments.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo in_array($currentPage, ['online-payments.php', 'online-payment.php']) ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-credit-card text-sm <?php echo in_array($currentPage, ['online-payments.php', 'online-payment.php']) ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Online Payment Gateway</span>
           </a>
+          <?php endif; ?>
 
           <!-- Treasury Reports -->
+          <?php if ($isSuperAdmin || $hasResourceAccess(['financial reports'])): ?>
           <a href="<?php echo $basePath ?? '../'; ?>pages/treasury/reports.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'reports.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-chart-pie text-sm <?php echo $currentPage == 'reports.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Financial Reports</span>
           </a>
+          <?php endif; ?>
 
           <!-- BOTTOM SECTION: MAIN CONTROL (ADMINISTRATION & GOVERNANCE) -->
           <?php

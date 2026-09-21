@@ -132,6 +132,26 @@ class HeaderService
                 $headerUser['granted_actions'] = array_values(array_unique($grantedActions));
                 $headerUser['granted_resources'] = array_values(array_unique($grantedResources));
                 
+                // --- INJECT LOCAL FEATURE PERMISSIONS ---
+                try {
+                    require_once __DIR__ . '/../../config/database.php';
+                    $db = \Database::getInstance();
+                    $targetId = $userId ?? '';
+                    $targetEmpId = $employeeId ?? '';
+                    $perms = $db->query("SELECT permissions_json FROM local_feature_permissions WHERE user_id = :uid OR user_id = :eid", [
+                        'uid' => $targetId,
+                        'eid' => $targetEmpId
+                    ]);
+                    if (!empty($perms)) {
+                        $localPerms = json_decode($perms[0]['permissions_json'], true) ?: [];
+                        // Ensure it is an array and map underscores to spaces to match sidebar keyword logic
+                        if (is_array($localPerms)) {
+                            $mappedPerms = array_map(function($p) { return str_replace('_', ' ', strtolower($p)); }, $localPerms);
+                            $headerUser['granted_resources'] = array_values(array_unique(array_merge($headerUser['granted_resources'], $mappedPerms)));
+                        }
+                    }
+                } catch (\Throwable $e) {}
+                
                 // Cache inside local session
                 $_SESSION['user_granted_actions'] = $headerUser['granted_actions'];
                 $_SESSION['user_granted_resources'] = $headerUser['granted_resources'];
