@@ -490,6 +490,6 @@ include '../../includes/sidebar.php';
   <span id="toastMsg" class="tracking-wide">Action completed successfully.</span>
 </div>
 \
-<script src="<?php echo $basePath ?? '../'; ?>assets/js/usermanagement/user-directory.js"></script>
+<script src="<?php echo $basePath ?? '../'; ?>assets/js/usermanagement/user-directory.js?v=<?php echo time(); ?>"></script>
 
 <?php include '../../includes/footer.php'; ?>

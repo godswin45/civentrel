@@ -1,10 +1,11 @@
 // User Directory Bootstrap Module
 
-window.loadCiventralScript('assets/js/usermanagement/shared/toast.js');
-window.loadCiventralScript('assets/js/usermanagement/user-directory/api.js');
-window.loadCiventralScript('assets/js/usermanagement/user-directory/ui.js');
-window.loadCiventralScript('assets/js/usermanagement/user-directory/filters.js');
-window.loadCiventralScript('assets/js/usermanagement/user-directory/modal.js', () => {
+const v = '?v=' + new Date().getTime();
+window.loadCiventralScript('assets/js/usermanagement/shared/toast.js' + v);
+window.loadCiventralScript('assets/js/usermanagement/user-directory/api.js' + v);
+window.loadCiventralScript('assets/js/usermanagement/user-directory/ui.js' + v);
+window.loadCiventralScript('assets/js/usermanagement/user-directory/filters.js' + v);
+window.loadCiventralScript('assets/js/usermanagement/user-directory/modal.js' + v, () => {
 
     function initUserDirectoryModule() {
         if (typeof renderSkeletonTable === 'function') {
