@@ -205,18 +205,18 @@ function renderTable(usersList = systemUsers) {
       </td>
       <td class="px-6 py-3.5 text-right whitespace-nowrap">
         <div class="inline-flex items-center space-x-1">
-          <button onclick="if(typeof openViewModal === 'function') openViewModal(${user.user_id})" class="text-slate-400 hover:text-brand-dark hover:bg-brand-light hover:border-brand-border/40 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="View Profile">
+          <button onclick="if(typeof openViewModal === 'function') openViewModal('${user.user_id}')" class="text-slate-400 hover:text-brand-dark hover:bg-brand-light hover:border-brand-border/40 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="View Profile">
             <i class="fa-solid fa-eye text-xs"></i>
           </button>
           ${canEdit ? `
-          <button onclick="if(typeof openEditModal === 'function') openEditModal(${user.user_id})" class="text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Edit Profile">
+          <button onclick="if(typeof openEditModal === 'function') openEditModal('${user.user_id}')" class="text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Edit Profile">
             <i class="fa-solid fa-pen text-xs"></i>
           </button>` : ''}
-          <button onclick="if(typeof openHistoryModal === 'function') openHistoryModal(${user.user_id})" class="text-slate-400 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Security Audit Log">
+          <button onclick="if(typeof openHistoryModal === 'function') openHistoryModal('${user.user_id}')" class="text-slate-400 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer" title="Security Audit Log">
             <i class="fa-solid fa-clock-rotate-left text-xs"></i>
           </button>
           ${canDelete ? `
-          <button onclick="if(typeof openArchiveUserModal === 'function') openArchiveUserModal(${user.user_id})" class="text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer ${user.status === 'Archived' ? 'opacity-40 cursor-not-allowed' : ''}" ${user.status === 'Archived' ? 'disabled' : ''} title="Archive User Account">
+          <button onclick="if(typeof openArchiveUserModal === 'function') openArchiveUserModal('${user.user_id}')" class="text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-100 p-1.5 rounded-lg border border-transparent transition cursor-pointer ${user.status === 'Archived' ? 'opacity-40 cursor-not-allowed' : ''}" ${user.status === 'Archived' ? 'disabled' : ''} title="Archive User Account">
             <i class="fa-solid fa-box-archive text-xs"></i>
           </button>` : ''}
         </div>
