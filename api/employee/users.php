@@ -393,7 +393,30 @@ if ($method === 'GET' && (!isset($result['body']['status']) || $result['body']['
     try {
         require_once __DIR__ . '/../../config/database.php';
         $db = Database::getInstance();
-        $localUsers = $db->query('SELECT * FROM local_users ORDER BY created_at DESC', []) ?: [];
+        $rawLocalUsers = $db->query('SELECT * FROM local_users ORDER BY created_at DESC', []) ?: [];
+        $localUsers = array_map(function($u) use ($fallbackDepartments) {
+            $u['roles'] = [
+                'role_id' => $u['role_id'],
+                'role_name' => $u['role_name'],
+                'role_prefix' => $u['role_prefix'],
+                'is_global_access' => $u['is_global_access'],
+                'is_superadmin' => $u['is_superadmin']
+            ];
+            $u['positions'] = [
+                'position_name' => $u['position_name'],
+                'department_id' => $u['department_id'],
+                'departments' => [
+                    'department_name' => $u['department_id'] ? 'Local Department (ID: ' . $u['department_id'] . ')' : 'Unassigned'
+                ]
+            ];
+            foreach ($fallbackDepartments as $dept) {
+                if ($dept['department_id'] == $u['department_id']) {
+                    $u['positions']['departments']['department_name'] = $dept['department_name'];
+                    break;
+                }
+            }
+            return $u;
+        }, $rawLocalUsers);
     } catch (\Throwable $e) { $localUsers = []; }
     respond([
         'status'       => 'success',
@@ -416,8 +439,37 @@ if (($liveBody['status'] ?? '') === 'success' && $method === 'GET') {
         $db = Database::getInstance();
         $localUsers = $db->query('SELECT * FROM local_users ORDER BY created_at DESC', []) ?: [];
         if (!empty($localUsers)) {
+            // Map flat structure to nested structure expected by frontend
+            $mappedLocalUsers = array_map(function($u) {
+                $u['roles'] = [
+                    'role_id' => $u['role_id'],
+                    'role_name' => $u['role_name'],
+                    'role_prefix' => $u['role_prefix'],
+                    'is_global_access' => $u['is_global_access'],
+                    'is_superadmin' => $u['is_superadmin']
+                ];
+                $u['positions'] = [
+                    'position_name' => $u['position_name'],
+                    'department_id' => $u['department_id'],
+                    'departments' => [
+                        'department_name' => $u['department_id'] ? 'Local Department (ID: ' . $u['department_id'] . ')' : 'Unassigned' // Fallback text if name is not stored
+                    ]
+                ];
+                // Try to resolve the local department name if possible
+                global $fallbackDepartments;
+                if (!empty($fallbackDepartments)) {
+                    foreach ($fallbackDepartments as $dept) {
+                        if ($dept['department_id'] == $u['department_id']) {
+                            $u['positions']['departments']['department_name'] = $dept['department_name'];
+                            break;
+                        }
+                    }
+                }
+                return $u;
+            }, $localUsers);
+            
             $existing = $liveBody['data'] ?? $liveBody['users'] ?? [];
-            $liveBody['data'] = array_merge($existing, $localUsers);
+            $liveBody['data'] = array_merge($existing, $mappedLocalUsers);
         }
     } catch (\Throwable $e) { /* table may not exist yet */ }
 }
