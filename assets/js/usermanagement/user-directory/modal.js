@@ -135,8 +135,13 @@ function openEditModal(userId) {
 
 // SECURITY LOGIN AUDIT LOGS MODAL
 function openHistoryModal(userId) {
-  const user = systemUsers.find(u => u.user_id === userId);
-  if (!user) return;
+  console.log('openHistoryModal called with userId:', userId, typeof userId);
+  const user = systemUsers.find(u => u.user_id == userId);
+  console.log('User found in systemUsers:', user);
+  if (!user) {
+    console.error('User not found in systemUsers! Returning early.');
+    return;
+  }
 
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
   document.getElementById('historyStaffName').innerText = `${fullName} (${user.employee_id})`;
@@ -186,8 +191,12 @@ function openArchiveUserModal(userId) {
     return;
   }
 
-  const user = systemUsers.find(u => u.user_id === userId);
-  if (!user) return;
+  const user = systemUsers.find(u => u.user_id == userId);
+  console.log('openArchiveUserModal User found:', user);
+  if (!user) {
+    console.error('User not found for archive!');
+    return;
+  }
 
   archiveTargetUserId = userId;
   const fullName = typeof getUserFullName === 'function' ? getUserFullName(user) : '';
