@@ -238,6 +238,41 @@ async function confirmArchiveUser() {
   }
 }
 
+// Automatically check default feature permissions when the System Role dropdown is changed
+document.addEventListener('DOMContentLoaded', () => {
+  const editRole = document.getElementById('editRole');
+  if (editRole) {
+    editRole.addEventListener('change', (e) => {
+      const selectedOption = e.target.options[e.target.selectedIndex];
+      if (!selectedOption || !selectedOption.value) return;
+      
+      const roleText = selectedOption.textContent; // e.g., "Treasury Manager (TRMG)"
+      const match = roleText.match(/\(([^)]+)\)/);
+      const prefix = match ? match[1].toUpperCase() : '';
+      
+      const featureCheckboxes = document.querySelectorAll('#editFeaturePermissions input[type="checkbox"]');
+      
+      let defaults = [];
+      if (['TRMG', 'TRES', 'CASH', 'TSTA', 'RCOL'].includes(prefix)) {
+        defaults = ['revenue_collection', 'disbursements', 'business_tax', 'market_stall', 'financial_reports'];
+      } else if (prefix === 'BDGT') {
+        defaults = ['budget_approvals', 'department_requests'];
+      } else if (['SADM', 'SA', 'ADM', 'DADM'].includes(prefix)) {
+        defaults = ['revenue_collection', 'disbursements', 'business_tax', 'market_stall', 'financial_reports', 'budget_approvals', 'department_requests', 'user_management', 'citizen_management', 'audit_logs'];
+      }
+      
+      // Only apply defaults if a role was actually mapped to some defaults
+      if (defaults.length > 0) {
+        featureCheckboxes.forEach(cb => {
+          cb.checked = defaults.includes(cb.value);
+        });
+      } else {
+        featureCheckboxes.forEach(cb => { cb.checked = false; });
+      }
+    });
+  }
+});
+
 window.openModal = openModal;
 window.closeModal = closeModal;
 window.openViewModal = openViewModal;
