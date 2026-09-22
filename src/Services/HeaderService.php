@@ -57,7 +57,7 @@ class HeaderService
             $roleNameLower = strtolower($headerUser['role']);
             $rolePrefixUpper = strtoupper($headerUser['role_prefix']);
 
-            if (!empty($user['is_superadmin']) || $rolePrefixUpper === 'SA' || $rolePrefixUpper === 'SADM' || $roleNameLower === 'super administrator' || $roleNameLower === 'superadmin') {
+            if (!empty($user['is_superadmin']) || $rolePrefixUpper === 'SA' || $rolePrefixUpper === 'SADM' || $roleNameLower === 'super administrator' || $roleNameLower === 'superadmin' || $roleNameLower === 'revenue administrator') {
                 $headerUser['is_superadmin'] = true;
             } else {
                 $headerUser['is_superadmin'] = false;
