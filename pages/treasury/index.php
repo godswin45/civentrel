@@ -456,6 +456,7 @@ include __DIR__ . '/../../includes/sidebar.php';
             <h2 class="text-sm font-extrabold text-slate-800">Revenue Collection Systems</h2>
           </div>
           <div class="p-5 grid grid-cols-1 gap-4">
+            <?php if ($isSuperAdmin || $hasResourceAccess(['business tax'])): ?>
             <a href="business-tax.php" class="flex items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-brand-light hover:border-brand-medium transition group">
               <div class="h-12 w-12 rounded-lg bg-brand-light border border-brand-border flex items-center justify-center text-brand-dark group-hover:bg-brand-medium group-hover:text-white transition">
                 <i class="fa-solid fa-file-invoice-dollar text-lg"></i>
@@ -466,7 +467,9 @@ include __DIR__ . '/../../includes/sidebar.php';
               </div>
               <i class="fa-solid fa-chevron-right text-slate-400 group-hover:text-brand-dark"></i>
             </a>
+            <?php endif; ?>
 
+            <?php if ($isSuperAdmin || $hasResourceAccess(['market stall'])): ?>
             <a href="market-stall.php" class="flex items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-brand-light hover:border-brand-medium transition group">
               <div class="h-12 w-12 rounded-lg bg-brand-light border border-brand-border flex items-center justify-center text-brand-dark group-hover:bg-brand-medium group-hover:text-white transition">
                 <i class="fa-solid fa-store text-lg"></i>
@@ -477,7 +480,9 @@ include __DIR__ . '/../../includes/sidebar.php';
               </div>
               <i class="fa-solid fa-chevron-right text-slate-400 group-hover:text-brand-dark"></i>
             </a>
+            <?php endif; ?>
 
+            <?php if ($isSuperAdmin || $hasResourceAccess(['revenue collection'])): ?>
             <a href="collection.php" class="flex items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-brand-light hover:border-brand-medium transition group">
               <div class="h-12 w-12 rounded-lg bg-brand-light border border-brand-border flex items-center justify-center text-brand-dark group-hover:bg-brand-medium group-hover:text-white transition">
                 <i class="fa-solid fa-receipt text-lg"></i>
@@ -488,7 +493,9 @@ include __DIR__ . '/../../includes/sidebar.php';
               </div>
               <i class="fa-solid fa-chevron-right text-slate-400 group-hover:text-brand-dark"></i>
             </a>
+            <?php endif; ?>
 
+            <?php if ($isSuperAdmin || $hasResourceAccess(['online payment', 'online payments', 'online payment gateway'])): ?>
             <a href="online-payments.php" class="flex items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-brand-light hover:border-brand-medium transition group">
               <div class="h-12 w-12 rounded-lg bg-brand-light border border-brand-border flex items-center justify-center text-brand-dark group-hover:bg-brand-medium group-hover:text-white transition">
                 <i class="fa-solid fa-credit-card text-lg"></i>
@@ -499,13 +506,16 @@ include __DIR__ . '/../../includes/sidebar.php';
               </div>
               <i class="fa-solid fa-chevron-right text-slate-400 group-hover:text-brand-dark"></i>
             </a>
+            <?php endif; ?>
           </div>
         </div>
 
         <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
           <div class="p-5 border-b border-slate-100 flex items-center justify-between">
             <h2 class="text-sm font-extrabold text-slate-800">Budget Management</h2>
+            <?php if ($isSuperAdmin || $hasResourceAccess(['budget', 'approval', 'treasury', 'budget approvals', 'department requests'])): ?>
             <a href="budget-approvals.php" class="text-[11px] font-bold text-brand-dark hover:underline">Approvals &rarr;</a>
+            <?php endif; ?>
           </div>
           <div class="p-5 space-y-4">
             <div class="flex items-center justify-between">
