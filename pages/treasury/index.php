@@ -590,7 +590,26 @@ include __DIR__ . '/../../includes/sidebar.php';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100" id="tx-tbody">
-              <?php foreach ($recent as $c): ?>
+              <?php 
+              $visibleCount = 0;
+              foreach ($recent as $c): 
+                  $sourceLower = strtolower($c['revenue_source'] ?? '');
+                  $canView = false;
+                  if ($isSuperAdmin) {
+                      $canView = true;
+                  } else {
+                      if (strpos($sourceLower, 'business') !== false || strpos($sourceLower, 'permit') !== false || strpos($sourceLower, 'tax') !== false) {
+                          $canView = $hasResourceAccess(['business tax']);
+                      } elseif (strpos($sourceLower, 'market') !== false || strpos($sourceLower, 'stall') !== false) {
+                          $canView = $hasResourceAccess(['market stall']);
+                      } else {
+                          // General collection / everything else
+                          $canView = $hasResourceAccess(['revenue collection']);
+                      }
+                  }
+                  if (!$canView) continue;
+                  $visibleCount++;
+              ?>
               <tr class="tx-row hover:bg-brand-light/40 transition"
                   data-or="<?= strtolower(htmlspecialchars($c['or_number'] ?? '')) ?>"
                   data-payer="<?= strtolower(htmlspecialchars($c['payer_name'] ?? '')) ?>"
@@ -611,7 +630,7 @@ include __DIR__ . '/../../includes/sidebar.php';
               </tr>
               <?php endforeach; ?>
 
-              <?php if (empty($recent)): ?>
+              <?php if ($visibleCount === 0): ?>
               <tr id="tx-empty-data">
                 <td colspan="5" class="px-5 py-14 text-center">
                   <div class="flex flex-col items-center gap-3">
