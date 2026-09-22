@@ -705,9 +705,12 @@ include __DIR__ . '/../../includes/sidebar.php';
 
       <!-- Transaction History -->
       <?php 
-      $module = 'treasury';
-      $limit = 8;
-      include __DIR__ . '/../../includes/transaction_history.php';
+      $canAccessAudit = $isSuperAdmin || (isset($hasResourceAccess) && $hasResourceAccess(['audit', 'audit log', 'user activity', 'login history', 'data change']));
+      if ($canAccessAudit):
+          $module = 'treasury';
+          $limit = 8;
+          include __DIR__ . '/../../includes/transaction_history.php';
+      endif;
       ?>
     </main>
 

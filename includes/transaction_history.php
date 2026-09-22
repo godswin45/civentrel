@@ -4,6 +4,11 @@
  * Reusable component for displaying transaction history across treasury pages
  */
 
+$canAccessAudit = !empty($headerUser['is_superadmin']) || !empty($headerUser['is_global_access']) || (isset($hasResourceAccess) && $hasResourceAccess(['audit', 'audit log', 'user activity', 'login history', 'data change']));
+if (!$canAccessAudit) {
+    return; // Hide transaction history for regular staff without audit permissions
+}
+
 if (!isset($module)) {
     $module = 'treasury';
 }
