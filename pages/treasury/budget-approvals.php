@@ -13,8 +13,8 @@ $errorMsg = null;
 $successMsg = null;
 
 // Permission Check: Only Superadmin or users with 'budget' or 'approval' resource access can view this page
-$isSuperAdmin = !empty($_SESSION['is_superadmin']) || !empty($_SESSION['is_global_access']);
-$userGrantedRes = $_SESSION['current_user_details']['granted_resources'] ?? [];
+$isSuperAdmin = !empty($headerUser['is_superadmin']) || !empty($headerUser['is_global_access']);
+$userGrantedRes = $headerUser['granted_resources'] ?? [];
 
 $hasResourceAccess = function($keywords) use ($isSuperAdmin, $userGrantedRes) {
     if ($isSuperAdmin) return true;
