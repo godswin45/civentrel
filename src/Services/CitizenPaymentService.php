@@ -15,15 +15,8 @@ class CitizenPaymentService {
     // Service fee calculation: 1% of amount (will be made configurable)
     private const SERVICE_FEE_PERCENTAGE = 0.01;
     
-    // Supported payment types
-    private const SUPPORTED_PAYMENT_TYPES = [
-        'Real Property Tax',
-        'Business Tax & Fees',
-        'Market Stall Rental',
-        'Community Tax Certificate',
-        'General government payment / miscellaneous fees',
-        'Business permit renewal or retirement payment'
-    ];
+    // We no longer strictly limit payment types because the API is now a Universal Gateway
+    // Modules will send their source_module and we will map them dynamically.
     
     public function __construct($db = null) {
         $this->db = $db;
@@ -69,13 +62,7 @@ class CitizenPaymentService {
                 }
             }
             
-            // 4. Validate payment type
-            if (!in_array($input['payment_type'], self::SUPPORTED_PAYMENT_TYPES, true)) {
-                return [
-                    'success' => false,
-                    'error' => sprintf('Invalid payment_type: %s', $input['payment_type'])
-                ];
-            }
+            // 4. Removed strict payment_type validation. Accept any payment type from registered modules.
             
             // 5. Recalculate amounts on server (don't trust client)
             $amount = (float) $input['amount'];
@@ -100,8 +87,10 @@ class CitizenPaymentService {
                 'email' => strtolower(trim($input['email'] ?? '')),
                 'payment_type' => $input['payment_type'],
                 'payment_source' => $input['payment_type'],
-                'fund_id' => $this->resolveFundId($input['payment_type']),
-                'fund_code' => $this->resolveFundCode($input['payment_type']),
+                'source_module' => $input['source_module'] ?? 'Unknown Module',
+                'application_id' => $input['application_id'] ?? null,
+                'fund_id' => $this->resolveFundId($input['payment_type'], $input['source_module'] ?? ''),
+                'fund_code' => $this->resolveFundCode($input['payment_type'], $input['source_module'] ?? ''),
                 'amount' => $amount,
                 'service_fee' => $serviceFee,
                 'total_amount' => $totalAmount,
@@ -128,8 +117,8 @@ class CitizenPaymentService {
                     throw new \Exception('Failed to create payment record');
                 }
                 
-                // 10. Call payment gateway (simulated for now, should integrate with actual gateway)
-                $gatewayResult = $this->callPaymentGateway($paymentData);
+                // 10. Call payment gateway
+                $gatewayResult = $this->callPaymentGateway($paymentData, (int) $paymentId);
                 
                 if (!$gatewayResult['success']) {
                     // Gateway call failed, mark as failed
@@ -148,32 +137,16 @@ class CitizenPaymentService {
                     ];
                 }
                 
-                // 11. Update payment as completed
+                // 11. Update payment with gateway reference, but keep status as pending!
                 $this->db->update('tr_online_payments',
                     [
-                        'status' => 'completed',
                         'gateway_reference' => $gatewayResult['gateway_reference'] ?? null,
-                        'gateway_response' => json_encode($gatewayResult),
-                        'settled_at' => date('Y-m-d H:i:s')
+                        'gateway_response' => json_encode($gatewayResult)
                     ],
                     ['id' => $paymentId]
                 );
                 
-                // 12. Record transaction in treasury collection
-                $collectionRecord = [
-                    'or_number' => $receiptNo,
-                    'payer_name' => trim($input['taxpayer_name'] ?? ''),
-                    'revenue_source' => $input['payment_type'],
-                    'fund_id' => $paymentData['fund_id'],
-                    'fund_code' => $paymentData['fund_code'],
-                    'amount' => $amount,
-                    'payment_mode' => strtolower($input['payment_method'] ?? 'gcash'),
-                    'collected_by' => 'Online Gateway (' . ($input['source'] ?? 'civentral-apps') . ')',
-                    'status' => 'valid',
-                    'created_at' => date('Y-m-d H:i:s')
-                ];
-                
-                $this->db->insert('tr_collections', $collectionRecord);
+                // 12. DO NOT record in tr_collections yet! That happens in the Webhook.
                 
                 // 13. Commit transaction
                 if ($this->db && method_exists($this->db, 'getPdo')) {
@@ -185,11 +158,12 @@ class CitizenPaymentService {
                     'data' => [
                         'transaction_id' => $transactionId,
                         'reference_no' => $referenceNo,
-                        'receipt_no' => $receiptNo,
-                        'status' => 'Paid',
+                        'receipt_no' => null, // No receipt yet until paid
+                        'status' => 'Pending',
                         'amount' => $amount,
                         'service_fee' => $serviceFee,
-                        'total_amount' => $totalAmount
+                        'total_amount' => $totalAmount,
+                        'checkout_url' => $gatewayResult['checkout_url'] ?? null
                     ]
                 ];
                 
@@ -266,36 +240,103 @@ class CitizenPaymentService {
     }
     
     /**
-     * Call payment gateway (integrated with actual gateway service)
+     * Call payment gateway (PayMongo Checkout Session)
      */
-    private function callPaymentGateway(array $paymentData): array {
-        // This would integrate with actual payment gateway like GCash, Maya, etc.
-        // For now, simulate successful gateway response
+    private function callPaymentGateway(array $paymentData, int $paymentId): array {
+        $secretKey = getenv('PAYMONGO_SECRET_KEY');
+        if (empty($secretKey)) {
+            return ['success' => false, 'message' => 'Payment gateway keys are not configured.'];
+        }
+
+        // PayMongo accepts amounts in centavos (e.g. 100.00 PHP = 10000)
+        $amountInCentavos = (int) round($paymentData['total_amount'] * 100);
+
+        $payload = [
+            'data' => [
+                'attributes' => [
+                    'billing' => [
+                        'name' => $paymentData['taxpayer_name'],
+                        'email' => $paymentData['email']
+                    ],
+                    'send_email_receipt' => true,
+                    'show_description' => true,
+                    'show_line_items' => true,
+                    'description' => 'Civentral Govt Fee: ' . $paymentData['payment_type'],
+                    'line_items' => [
+                        [
+                            'currency' => 'PHP',
+                            'amount' => (int) round($paymentData['amount'] * 100),
+                            'description' => $paymentData['payment_type'],
+                            'name' => 'Government Fee',
+                            'quantity' => 1
+                        ]
+                    ],
+                    'payment_method_types' => ['gcash', 'paymaya', 'card'],
+                    'reference_number' => $paymentData['payment_reference'],
+                    'success_url' => getenv('APP_URL') ? rtrim(getenv('APP_URL'), '/') . '/payment-success' : 'http://localhost/civentrel/payment-success',
+                    'cancel_url' => getenv('APP_URL') ? rtrim(getenv('APP_URL'), '/') . '/payment-cancel' : 'http://localhost/civentrel/payment-cancel'
+                ]
+            ]
+        ];
+
+        // If there's a service fee, add it as a line item
+        if ($paymentData['service_fee'] > 0) {
+            $payload['data']['attributes']['line_items'][] = [
+                'currency' => 'PHP',
+                'amount' => (int) round($paymentData['service_fee'] * 100),
+                'description' => 'System Service Fee',
+                'name' => 'Service Fee',
+                'quantity' => 1
+            ];
+        }
+
+        $ch = curl_init('https://api.paymongo.com/v2/checkout_sessions');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'Authorization: Basic ' . base64_encode($secretKey . ':')
+        ]);
+        // Temporarily ignore SSL for local XAMPP issues if needed
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+        $response = curl_exec($ch);
         
-        try {
-            // Log the gateway call attempt
-            $this->logGatewayCall(
-                null, // payment_id will be updated later
-                $paymentData['payment_gateway'],
-                $paymentData,
-                null,
-                null,
-                null
-            );
-            
-            // In production, call actual gateway API
-            // For MVP, simulate success
+        $debugInfo = "Response: " . print_r($response, true) . "\nURL: " . curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) . "\nError: " . curl_error($ch);
+        file_put_contents(__DIR__ . '/../../curl_dump.txt', $debugInfo);
+        
+        if ($response === false) {
+            throw new \Exception("cURL error: " . curl_error($ch));
+        }
+
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $responseData = json_decode($response, true);
+
+        $this->logGatewayCall(
+            $paymentId,
+            'PayMongo',
+            $payload,
+            $responseData,
+            $httpCode,
+            $httpCode >= 400 ? ($responseData['errors'][0]['detail'] ?? 'Unknown API Error') : null
+        );
+
+        if ($httpCode >= 200 && $httpCode < 300 && isset($responseData['data']['attributes']['checkout_url'])) {
+            // Keep status as pending, but return the checkout URL
             return [
                 'success' => true,
-                'gateway_reference' => 'GW-' . time() . '-' . substr(bin2hex(random_bytes(4)), 0, 8),
-                'message' => 'Payment processed successfully',
-                'timestamp' => date('Y-m-d H:i:s')
+                'checkout_url' => $responseData['data']['attributes']['checkout_url'],
+                'gateway_reference' => $responseData['data']['id'],
+                'message' => 'Checkout session created successfully'
             ];
-            
-        } catch (\Throwable $e) {
+        } else {
             return [
                 'success' => false,
-                'message' => 'Gateway error: ' . $e->getMessage()
+                'message' => 'Gateway error: ' . ($responseData['errors'][0]['detail'] ?? 'Failed to generate checkout link')
             ];
         }
     }
@@ -328,33 +369,53 @@ class CitizenPaymentService {
     }
     
     /**
-     * Resolve fund ID from payment type
+     * Resolve fund ID from payment type and source module
      */
-    private function resolveFundId(string $paymentType): string {
-        $fundMap = [
-            'Real Property Tax' => 'property_tax',
-            'Business Tax & Fees' => 'business',
-            'Market Stall Rental' => 'market',
-            'Community Tax Certificate' => 'general',
-            'Business permit renewal or retirement payment' => 'business'
-        ];
+    private function resolveFundId(string $paymentType, string $sourceModule = ''): string {
+        $type = strtolower($paymentType . ' ' . $sourceModule);
         
-        return $fundMap[$paymentType] ?? 'general';
+        if (strpos($type, 'property') !== false || strpos($type, 'zoning') !== false) {
+            return 'property_tax';
+        }
+        if (strpos($type, 'business') !== false || strpos($type, 'franchise') !== false || strpos($type, 'building') !== false) {
+            return 'business';
+        }
+        if (strpos($type, 'market') !== false) {
+            return 'market';
+        }
+        if (strpos($type, 'scholarship') !== false || strpos($type, 'education') !== false) {
+            return 'sef';
+        }
+        if (strpos($type, 'cemetery') !== false || strpos($type, 'parks') !== false || strpos($type, 'facility') !== false || strpos($type, 'water') !== false) {
+            return 'eef';
+        }
+        
+        return 'general';
     }
     
     /**
-     * Resolve fund code from payment type
+     * Resolve fund code from payment type and source module
      */
-    private function resolveFundCode(string $paymentType): string {
-        $fundMap = [
-            'Real Property Tax' => 'PTF',
-            'Business Tax & Fees' => 'BSF',
-            'Market Stall Rental' => 'MSF',
-            'Community Tax Certificate' => 'GF',
-            'Business permit renewal or retirement payment' => 'BSF'
-        ];
+    private function resolveFundCode(string $paymentType, string $sourceModule = ''): string {
+        $type = strtolower($paymentType . ' ' . $sourceModule);
         
-        return $fundMap[$paymentType] ?? 'GF';
+        if (strpos($type, 'property') !== false || strpos($type, 'zoning') !== false) {
+            return 'PTF';
+        }
+        if (strpos($type, 'business') !== false || strpos($type, 'franchise') !== false || strpos($type, 'building') !== false) {
+            return 'BSF';
+        }
+        if (strpos($type, 'market') !== false) {
+            return 'MSF';
+        }
+        if (strpos($type, 'scholarship') !== false || strpos($type, 'education') !== false) {
+            return 'SEF';
+        }
+        if (strpos($type, 'cemetery') !== false || strpos($type, 'parks') !== false || strpos($type, 'facility') !== false || strpos($type, 'water') !== false) {
+            return 'EEF';
+        }
+        
+        return 'GF';
     }
     
     /**

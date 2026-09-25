@@ -115,10 +115,10 @@ try {
         'status' => 'success',
         'message' => $isDuplicate 
             ? 'This payment was already processed. Here are the details.'
-            : 'Payment accepted by the online payment gateway.',
+            : 'Payment checkout link generated successfully.',
         'transaction_id' => $result['data']['transaction_id'],
         'reference_no' => $result['data']['reference_no'],
-        'receipt_no' => $result['data']['receipt_no'],
+        'checkout_url' => $result['data']['checkout_url'] ?? null,
         'data' => $result['data'],
         'isDuplicate' => $isDuplicate
     ], 200);
