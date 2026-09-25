@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['reference'])) {
     }
 }
 
-$orNumber  = $payment['or_number'] ?? null;
+$orNumber  = $payment['receipt_no'] ?? $payment['or_number'] ?? null;
 $amount    = $payment['amount'] ?? null;
 $payRef    = $payment['payment_reference'] ?? ($_GET['reference'] ?? '');
 $createdAt = $payment['created_at'] ?? null;
