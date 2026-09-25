@@ -40,9 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['reference'])) {
         if ($e->getMessage() === 'Payment already processed.') {
             // Fetch the payment to show the receipt anyway
             global $db;
-            $stmt = $db->prepare("SELECT * FROM tr_online_payments WHERE payment_reference = ? LIMIT 1");
-            $stmt->execute([$reference]);
-            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+            $results = $db->query("SELECT * FROM tr_online_payments WHERE payment_reference = ? LIMIT 1", [$reference]);
+            $payment = $results[0] ?? null;
             
             if ($payment) {
                 $successMsg = 'Payment was successful! Your OR number is: ' . ($payment['or_number'] ?? 'Pending');
