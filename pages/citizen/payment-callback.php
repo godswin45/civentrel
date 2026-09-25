@@ -37,13 +37,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['reference'])) {
             $errorMsg = 'Payment failed. Please try again or contact support.';
         }
     } catch (Exception $e) {
-        $errorMsg = $e->getMessage();
+        if ($e->getMessage() === 'Payment already processed.') {
+            // Fetch the payment to show the receipt anyway
+            $payment = $treasuryService->getPaymentByReference($reference);
+            if ($payment) {
+                $successMsg = 'Payment was successful! Your OR number is: ' . ($payment['or_number'] ?? 'Pending');
+            } else {
+                $errorMsg = 'Payment already processed but could not retrieve details.';
+            }
+        } else {
+            $errorMsg = $e->getMessage();
+        }
     }
 }
 
 $basePath = '../../';
-include __DIR__ . '/../includes/header.php';
-include __DIR__ . '/../includes/sidebar.php';
+include __DIR__ . '/../../includes/header.php';
+include __DIR__ . '/../../includes/sidebar.php';
 ?>
     <main class="flex-1 p-6 md:p-8 w-full space-y-6 overflow-y-auto">
 
@@ -122,4 +132,4 @@ include __DIR__ . '/../includes/sidebar.php';
       <?php endif; ?>
 
     </main>
-<?php include __DIR__ . '/../includes/footer.php'; ?>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>
