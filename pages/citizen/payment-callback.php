@@ -1,8 +1,8 @@
 <?php
 require_once __DIR__ . '/../../src/bootstrap.php';
 
-// Auth check
-if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id']) && empty($_SESSION['citizen_id'])) {
+// Auth check (Bypass if returning from PayMongo with a reference)
+if (empty($_GET['reference']) && empty($_SESSION['user_id']) && empty($_SESSION['employee_id']) && empty($_SESSION['citizen_id'])) {
     header('Location: ../../login.php');
     exit;
 }
