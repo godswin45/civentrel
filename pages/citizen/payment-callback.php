@@ -1,50 +1,43 @@
 <?php
 require_once __DIR__ . '/../../src/bootstrap.php';
 
-// Auth check (Bypass if returning from PayMongo with a reference)
+// Allow access if returning from PayMongo with a reference (no session needed for citizens)
 if (empty($_GET['reference']) && empty($_SESSION['user_id']) && empty($_SESSION['employee_id']) && empty($_SESSION['citizen_id'])) {
     header('Location: ../../login.php');
     exit;
 }
 
-$pageTitle = 'Payment Callback';
-$activePage = 'citizen-online-payment';
 $errorMsg = null;
 $successMsg = null;
 $payment = null;
 
 // Handle payment callback
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['reference'])) {
+    $reference = $_GET['reference'];
+    $status = $_GET['status'] ?? 'failed';
+
     try {
-        $reference = $_GET['reference'];
-        $status = $_GET['status'] ?? 'failed';
-        
-        // In production, verify the callback with GCash signature
-        // For demo, we'll process directly
-        
         $gatewayResponse = [
-            'status' => $status,
-            'reference' => 'GCASH-' . time(),
+            'status'         => $status,
+            'reference'      => 'PAY-' . time(),
             'transaction_id' => 'TXN-' . strtoupper(substr(bin2hex(random_bytes(8)), 0, 16)),
-            'timestamp' => date('c'),
+            'timestamp'      => date('c'),
         ];
-        
+
         $payment = $treasuryService->processOnlinePayment($reference, $gatewayResponse);
-        
-        if ($payment['status'] === 'completed') {
-            $successMsg = 'Payment completed successfully! Your OR number is: ' . $payment['or_number'];
+
+        if (($payment['status'] ?? '') === 'completed') {
+            $successMsg = true;
         } else {
             $errorMsg = 'Payment failed. Please try again or contact support.';
         }
     } catch (Exception $e) {
         if ($e->getMessage() === 'Payment already processed.') {
-            // Fetch the payment to show the receipt anyway
-            global $db;
+            // Fetch the payment to show the receipt
             $results = $db->query("SELECT * FROM tr_online_payments WHERE payment_reference = ? LIMIT 1", [$reference]);
-            $payment = $results[0] ?? null;
-            
+            $payment  = $results[0] ?? null;
             if ($payment) {
-                $successMsg = 'Payment was successful! Your OR number is: ' . ($payment['or_number'] ?? 'Pending');
+                $successMsg = true;
             } else {
                 $errorMsg = 'Payment already processed but could not retrieve details.';
             }
@@ -54,85 +47,217 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['reference'])) {
     }
 }
 
-$basePath = '../../';
-include __DIR__ . '/../../includes/header.php';
-include __DIR__ . '/../../includes/sidebar.php';
+$orNumber  = $payment['or_number'] ?? null;
+$amount    = $payment['amount'] ?? null;
+$payRef    = $payment['payment_reference'] ?? ($_GET['reference'] ?? '');
+$createdAt = $payment['created_at'] ?? null;
+$gateway   = strtoupper($payment['payment_gateway'] ?? $payment['payment_method'] ?? 'Online');
 ?>
-    <main class="flex-1 p-6 md:p-8 w-full space-y-6 overflow-y-auto">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment Result — Civentral</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      <!-- Breadcrumb -->
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/60 pb-5">
-        <div class="space-y-1">
-          <div class="flex items-center space-x-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-            <span>Citizen Services</span>
-            <i class="fa-solid fa-chevron-right text-[8px] opacity-60"></i>
-            <span class="text-brand-dark">Payment Result</span>
-          </div>
-          <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 mt-4">
-            <i class="fa-solid fa-receipt text-brand-dark"></i>
-            Payment Result
-          </h1>
-        </div>
-      </div>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f4c75 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
 
-      <?php if ($successMsg): ?>
-      <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-8 text-center">
-        <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <i class="fa-solid fa-check text-3xl text-emerald-600"></i>
+        .card {
+            background: #ffffff;
+            border-radius: 24px;
+            padding: 48px 40px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 32px 64px rgba(0,0,0,0.3);
+        }
+
+        /* ── Success state ── */
+        .icon-circle {
+            width: 80px; height: 80px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 2rem;
+        }
+        .icon-circle.success { background: #dcfce7; color: #16a34a; }
+        .icon-circle.error   { background: #fee2e2; color: #dc2626; }
+
+        .logo {
+            display: flex; align-items: center; justify-content: center;
+            gap: 8px; margin-bottom: 32px;
+        }
+        .logo img { height: 32px; }
+        .logo span { font-weight: 800; font-size: 1.1rem; color: #0f172a; letter-spacing: -0.5px; }
+
+        h1.title { font-size: 1.5rem; font-weight: 800; margin-bottom: 8px; }
+        h1.title.success { color: #15803d; }
+        h1.title.error   { color: #b91c1c; }
+
+        .subtitle { font-size: 0.9rem; color: #64748b; margin-bottom: 32px; line-height: 1.5; }
+
+        /* ── Receipt rows ── */
+        .receipt {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 20px;
+            text-align: left;
+            margin-bottom: 32px;
+        }
+        .receipt-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.82rem;
+        }
+        .receipt-row:last-child { border-bottom: none; }
+        .receipt-row .label { color: #94a3b8; font-weight: 500; }
+        .receipt-row .value { font-weight: 700; color: #1e293b; text-align: right; max-width: 60%; word-break: break-all; }
+        .receipt-row .value.or { color: #0f4c75; font-size: 0.9rem; }
+        .receipt-row .value.amount { color: #15803d; font-size: 1rem; }
+
+        .or-pending {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #fef9c3; color: #854d0e;
+            border-radius: 8px; padding: 4px 10px;
+            font-size: 0.78rem; font-weight: 600;
+        }
+
+        /* ── Buttons ── */
+        .btn-primary {
+            display: block; width: 100%;
+            background: linear-gradient(135deg, #0f4c75, #1e3a5f);
+            color: #fff; font-weight: 700; font-size: 0.9rem;
+            border: none; border-radius: 12px;
+            padding: 14px; cursor: pointer;
+            text-decoration: none; margin-bottom: 12px;
+            transition: opacity 0.2s;
+        }
+        .btn-primary:hover { opacity: 0.9; }
+
+        .btn-secondary {
+            display: block; width: 100%;
+            background: transparent;
+            color: #0f4c75; font-weight: 600; font-size: 0.9rem;
+            border: 2px solid #0f4c75; border-radius: 12px;
+            padding: 13px; cursor: pointer;
+            text-decoration: none; transition: background 0.2s;
+        }
+        .btn-secondary:hover { background: #eff6ff; }
+
+        .info-box {
+            background: #f0fdf4; border: 1px solid #bbf7d0;
+            border-radius: 12px; padding: 14px 16px;
+            font-size: 0.8rem; color: #166534;
+            margin-bottom: 24px; text-align: left;
+            display: flex; gap: 10px; align-items: flex-start;
+        }
+        .info-box i { margin-top: 2px; flex-shrink: 0; }
+    </style>
+</head>
+<body>
+<div class="card">
+
+    <!-- Logo -->
+    <div class="logo">
+        <img src="../../assets/images/logo.png" alt="Civentral" onerror="this.style.display='none'" />
+        <span>CIVENTRAL</span>
+    </div>
+
+    <?php if ($successMsg): ?>
+
+        <!-- SUCCESS -->
+        <div class="icon-circle success">
+            <i class="fa-solid fa-check"></i>
         </div>
-        <h2 class="text-xl font-bold text-emerald-800 mb-2">Payment Successful!</h2>
-        <p class="text-emerald-600 mb-6"><?= htmlspecialchars($successMsg) ?></p>
-        
-        <?php if ($payment): ?>
-        <div class="max-w-md mx-auto bg-white border border-emerald-200 rounded-xl p-4 text-left">
-          <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
-            <span class="text-xs text-slate-400">Payment Reference</span>
-            <span class="text-xs font-mono font-bold text-slate-800"><?= htmlspecialchars($payment['payment_reference']) ?></span>
-          </div>
-          <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
-            <span class="text-xs text-slate-400">OR Number</span>
-            <span class="text-xs font-mono font-bold text-brand-dark"><?= htmlspecialchars($payment['or_number']) ?></span>
-          </div>
-          <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
-            <span class="text-xs text-slate-400">Amount</span>
-            <span class="text-xs font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($payment['amount']) ?></span>
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="text-xs text-slate-400">Date</span>
-            <span class="text-xs font-bold text-slate-800"><?= date('M j, Y g:i A', strtotime($payment['created_at'])) ?></span>
-          </div>
+
+        <h1 class="title success">Payment Successful!</h1>
+        <p class="subtitle">Your payment has been received and is being processed.<br>Please keep your reference number for your records.</p>
+
+        <div class="receipt">
+            <div class="receipt-row">
+                <span class="label">Reference No.</span>
+                <span class="value"><?= htmlspecialchars($payRef ?: 'N/A') ?></span>
+            </div>
+            <div class="receipt-row">
+                <span class="label">OR Number</span>
+                <span class="value or">
+                    <?php if ($orNumber): ?>
+                        <?= htmlspecialchars($orNumber) ?>
+                    <?php else: ?>
+                        <span class="or-pending"><i class="fa-solid fa-clock"></i> Pending Issuance</span>
+                    <?php endif; ?>
+                </span>
+            </div>
+            <?php if ($amount): ?>
+            <div class="receipt-row">
+                <span class="label">Amount Paid</span>
+                <span class="value amount">₱<?= number_format((float)$amount, 2) ?></span>
+            </div>
+            <?php endif; ?>
+            <div class="receipt-row">
+                <span class="label">Gateway</span>
+                <span class="value"><?= htmlspecialchars($gateway) ?></span>
+            </div>
+            <?php if ($createdAt): ?>
+            <div class="receipt-row">
+                <span class="label">Date &amp; Time</span>
+                <span class="value"><?= date('M j, Y g:i A', strtotime($createdAt)) ?></span>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <?php if (!$orNumber): ?>
+        <div class="info-box">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Your OR Number will be issued after the revenue office confirms your payment. You may check your payment history in the Civentral app.</span>
         </div>
         <?php endif; ?>
-        
-        <div class="mt-6 space-x-3">
-          <a href="online-payment.php" class="inline-block bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg text-sm transition">
-            Make Another Payment
-          </a>
-          <a href="online-payment.php" class="inline-block bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-bold px-6 py-2.5 rounded-lg text-sm transition">
-            View Payment History
-          </a>
-        </div>
-      </div>
-      <?php endif; ?>
 
-      <?php if ($errorMsg): ?>
-      <div class="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
-        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <i class="fa-solid fa-xmark text-3xl text-red-600"></i>
-        </div>
-        <h2 class="text-xl font-bold text-red-800 mb-2">Payment Failed</h2>
-        <p class="text-red-600 mb-6"><?= htmlspecialchars($errorMsg) ?></p>
-        
-        <div class="mt-6 space-x-3">
-          <a href="online-payment.php" class="inline-block bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-lg text-sm transition">
-            Try Again
-          </a>
-          <a href="../../pages/dashboard.php" class="inline-block bg-white border border-red-200 text-red-700 hover:bg-red-50 font-bold px-6 py-2.5 rounded-lg text-sm transition">
-            Return to Dashboard
-          </a>
-        </div>
-      </div>
-      <?php endif; ?>
+        <a href="javascript:void(0)" onclick="window.close()" class="btn-primary">
+            <i class="fa-solid fa-circle-check"></i> &nbsp; Done — Close This Tab
+        </a>
 
-    </main>
-<?php include __DIR__ . '/../../includes/footer.php'; ?>
+    <?php elseif ($errorMsg): ?>
+
+        <!-- ERROR -->
+        <div class="icon-circle error">
+            <i class="fa-solid fa-xmark"></i>
+        </div>
+
+        <h1 class="title error">Payment Failed</h1>
+        <p class="subtitle"><?= htmlspecialchars($errorMsg) ?></p>
+
+        <a href="javascript:void(0)" onclick="window.close()" class="btn-primary" style="background: linear-gradient(135deg,#dc2626,#b91c1c);">
+            Close This Tab
+        </a>
+
+    <?php else: ?>
+
+        <!-- FALLBACK -->
+        <div class="icon-circle" style="background:#f1f5f9;color:#64748b">
+            <i class="fa-solid fa-hourglass-half"></i>
+        </div>
+        <h1 class="title" style="color:#334155">Processing…</h1>
+        <p class="subtitle">We are verifying your payment. Please wait a moment.</p>
+
+    <?php endif; ?>
+
+</div>
+</body>
+</html>
