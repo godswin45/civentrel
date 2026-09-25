@@ -166,7 +166,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                   <div class="text-lg font-black text-brand-dark">Official Receipt</div>
                   <div class="text-xs uppercase tracking-wider text-slate-400">Market Stall Rental</div>
                 </div>
-                <div class="font-mono text-sm font-bold text-brand-dark"><?= htmlspecialchars($lastReceipt['or_number']) ?></div>
+                <div class="font-mono text-sm font-bold text-brand-dark"><?= htmlspecialchars($lastReceipt['or_number'] ?? '—') ?></div>
               </div>
               <dl class="space-y-3 text-sm">
                 <div class="flex justify-between"><dt class="text-slate-500 font-semibold">Received from</dt><dd class="font-bold text-slate-800"><?= htmlspecialchars($lastReceipt['payer_name']) ?></dd></div>

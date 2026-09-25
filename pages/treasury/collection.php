@@ -216,7 +216,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <div class="text-xs uppercase tracking-wider text-slate-400">Municipal Treasurer's Office</div>
               </div>
               <div class="text-right">
-                <div class="font-mono text-sm font-bold text-brand-dark"><?= htmlspecialchars($lastReceipt['or_number']) ?></div>
+                <div class="font-mono text-sm font-bold text-brand-dark"><?= htmlspecialchars($lastReceipt['or_number'] ?? '—') ?></div>
                 <div class="text-[10px] text-slate-400 mt-0.5"><?= date('F j, Y g:i A', strtotime($lastReceipt['created_at'])) ?></div>
               </div>
             </div>
@@ -234,7 +234,7 @@ include __DIR__ . '/../../includes/sidebar.php';
             <div class="mt-6 pt-4 border-t-2 border-dashed border-brand-border text-xs text-slate-500">
               <div class="flex justify-between">
                 <span>Collected by: <?= htmlspecialchars($lastReceipt['collected_by'] ?? 'System') ?></span>
-                <span class="font-mono"><?= htmlspecialchars($lastReceipt['or_number']) ?></span>
+                <span class="font-mono"><?= htmlspecialchars($lastReceipt['or_number'] ?? '—') ?></span>
               </div>
               <!-- Signature block — print only -->
               <div class="or-print-only mt-10 grid grid-cols-2 gap-10">

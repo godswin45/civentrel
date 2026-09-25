@@ -74,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/../../../src/bootstrap.php';
+date_default_timezone_set('Asia/Manila');
 require_once __DIR__ . '/../../../src/Services/CitizenPaymentService.php';
 
 function respond(array $payload, int $statusCode = 200): void {

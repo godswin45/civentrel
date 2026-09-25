@@ -110,6 +110,28 @@ try {
         case 'POST':
             if ($path === '/budget/requests' || $path === '/' || $path === '') {
                 $input = json_decode(file_get_contents('php://input'), true) ?? [];
+                if (empty($input) && !empty($_POST)) {
+                    $input = $_POST;
+                }
+
+                // Handle Document Upload
+                $uploadedFilePath = null;
+                if (!empty($_FILES['supporting_document']) && $_FILES['supporting_document']['error'] === UPLOAD_ERR_OK) {
+                    $uploadDir = __DIR__ . '/../../pages/treasury/uploads/budget/';
+                    if (!is_dir($uploadDir)) {
+                        mkdir($uploadDir, 0755, true);
+                    }
+                    
+                    $fileTmp = $_FILES['supporting_document']['tmp_name'];
+                    $fileName = basename($_FILES['supporting_document']['name']);
+                    // Clean filename, add timestamp for uniqueness
+                    $cleanName = preg_replace('/[^a-zA-Z0-9.\-_]/', '', $fileName);
+                    $newFileName = time() . '_' . $cleanName;
+                    
+                    if (move_uploaded_file($fileTmp, $uploadDir . $newFileName)) {
+                        $uploadedFilePath = $newFileName;
+                    }
+                }
 
                 // Validation
                 $required = ['department_name', 'project_title', 'requested_amount'];
@@ -159,6 +181,7 @@ try {
                     'quarter'          => $input['quarter'] ?? 'Q' . ceil(date('n') / 3),
                     'requested_by'     => trim($input['requested_by'] ?? 'External API'),
                     'justification'    => trim($input['justification'] ?? ''),
+                    'supporting_document' => $uploadedFilePath,
                 ]);
 
                 apiRespond([
