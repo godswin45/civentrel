@@ -177,7 +177,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <td class="px-5 py-4 text-slate-600 max-w-[220px] truncate" title="<?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>">
                   <?= htmlspecialchars($request['project_title'] ?? $request['description'] ?? '') ?>
                   <?php if (!empty($request['supporting_document'])): ?>
-                    <a href="<?= htmlspecialchars($request['supporting_document']) ?>" target="_blank" class="block text-[10px] text-brand-dark font-bold hover:underline mt-1"><i class="fa-solid fa-paperclip mr-1"></i>View attachment</a>
+                    <a href="uploads/budget/<?= htmlspecialchars($request['supporting_document']) ?>" target="_blank" class="block text-[10px] text-brand-dark font-bold hover:underline mt-1"><i class="fa-solid fa-paperclip mr-1"></i>View attachment</a>
                   <?php endif; ?>
                 </td>
                 <td class="px-5 py-4 font-mono font-bold text-slate-800 whitespace-nowrap"><?= $treasuryService->formatPeso($request['requested_amount']) ?></td>
