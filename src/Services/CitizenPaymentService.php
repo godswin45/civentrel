@@ -273,8 +273,8 @@ class CitizenPaymentService {
                     ],
                     'payment_method_types' => ['gcash', 'paymaya', 'card'],
                     'reference_number' => $paymentData['payment_reference'],
-                    'success_url' => getenv('APP_URL') ? rtrim(getenv('APP_URL'), '/') . '/payment-success' : 'http://localhost/civentrel/payment-success',
-                    'cancel_url' => getenv('APP_URL') ? rtrim(getenv('APP_URL'), '/') . '/payment-cancel' : 'http://localhost/civentrel/payment-cancel'
+                    'success_url' => getenv('APP_URL') ? rtrim(getenv('APP_URL'), '/') . '/pages/citizen/payment-callback.php?status=success&reference=' . $paymentData['payment_reference'] : 'http://localhost/civentrel/pages/citizen/payment-callback.php?status=success&reference=' . $paymentData['payment_reference'],
+                    'cancel_url' => getenv('APP_URL') ? rtrim(getenv('APP_URL'), '/') . '/pages/citizen/payment-callback.php?status=failed&reference=' . $paymentData['payment_reference'] : 'http://localhost/civentrel/pages/citizen/payment-callback.php?status=failed&reference=' . $paymentData['payment_reference']
                 ]
             ]
         ];
