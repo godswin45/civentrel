@@ -188,7 +188,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <td class="px-5 py-3">
                   <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase <?= $statusCls ?>"><?= $status ?></span>
                 </td>
-                <td class="px-5 py-3 font-mono text-slate-400"><?= $p['or_number'] ? htmlspecialchars($p['or_number']) : '—' ?></td>
+                <td class="px-5 py-3 font-mono text-slate-400"><?= !empty($p['receipt_no']) ? htmlspecialchars($p['receipt_no']) : (!empty($p['or_number']) ? htmlspecialchars($p['or_number']) : '—') ?></td>
                 <td class="px-5 py-3 text-slate-400 whitespace-nowrap"><?= date('M j, Y g:i A', strtotime($p['created_at'])) ?></td>
                 <td class="px-5 py-3">
                   <?php if ($canAct): ?>
@@ -211,7 +211,11 @@ include __DIR__ . '/../../includes/sidebar.php';
                     </form>
                   </div>
                   <?php else: ?>
-                  <span class="text-[10px] text-slate-300 font-semibold">—</span>
+                    <?php if ($status === 'completed'): ?>
+                    <span class="inline-flex items-center gap-1 text-[10px] text-emerald-500 font-bold bg-emerald-50 px-2 py-1 rounded-full"><i class="fa-solid fa-check-double"></i> Confirmed</span>
+                    <?php else: ?>
+                    <span class="inline-flex items-center gap-1 text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-1 rounded-full"><i class="fa-solid fa-lock"></i> Locked</span>
+                    <?php endif; ?>
                   <?php endif; ?>
                 </td>
               </tr>
