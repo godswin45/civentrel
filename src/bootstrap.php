@@ -3,6 +3,7 @@
 if (!ob_get_level()) {
     ob_start();
 }
+date_default_timezone_set('Asia/Manila');
 
 if (session_status() === PHP_SESSION_NONE) {
     // Scope the session cookie to the app root (e.g. /civentrel/) so it is
