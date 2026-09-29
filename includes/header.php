@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../src/bootstrap.php';
 ?>
 <!DOCTYPE html>
@@ -70,10 +70,36 @@ require_once __DIR__ . '/../src/bootstrap.php';
         <i id="themeToggleIcon" class="fa-solid fa-moon text-lg"></i>
       </button>
 
-      <button class="header-action-btn p-2 text-slate-400 hover:text-brand-dark dark:hover:text-brand-medium cursor-pointer relative">
-        <i class="fa-solid fa-bell text-lg"></i>
-        <span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
-      </button>
+      <!-- Notification Bell Dropdown -->
+      <div class="relative" id="notifWrapper">
+        <button id="notifBellBtn" onclick="toggleNotifDropdown(event)"
+          class="header-action-btn p-2 text-slate-400 hover:text-brand-dark dark:hover:text-brand-medium cursor-pointer relative"
+          title="Notifications">
+          <i class="fa-solid fa-bell text-lg"></i>
+          <span id="notifBadge" class="hidden absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
+        </button>
+
+        <!-- Dropdown Panel -->
+        <div id="notifDropdown"
+          class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-[110] overflow-hidden origin-top-right">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+            <span class="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Notifications</span>
+            <button onclick="markAllNotifsRead()" class="text-[10px] font-bold text-brand-dark hover:underline cursor-pointer">Mark all as read</button>
+          </div>
+          <!-- List -->
+          <div id="notifList" class="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+            <div class="flex flex-col items-center py-8 gap-2 text-slate-400">
+              <i class="fa-solid fa-bell-slash text-2xl text-slate-300"></i>
+              <p class="text-xs font-bold">No notifications</p>
+            </div>
+          </div>
+          <!-- Footer -->
+          <div class="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 text-center">
+            <span class="text-[10px] font-bold text-slate-400">Showing latest notifications</span>
+          </div>
+        </div>
+      </div>
       
       <div class="h-6 w-px bg-slate-200 dark:bg-slate-800"></div>
  
@@ -162,5 +188,80 @@ require_once __DIR__ . '/../src/bootstrap.php';
     </div>
 
   <script src="<?php echo $basePath ?? '../'; ?>assets/js/app.js"></script>
+  <script>
+  // Notification Bell
+  (function () {
+    const bp   = window.civentralBasePath || '../';
+    const API  = bp + 'api/notifications.php';
+    const drop = document.getElementById('notifDropdown');
+    const list = document.getElementById('notifList');
+    const badge = document.getElementById('notifBadge');
+    let loaded = false;
+    const priorityColour = { Critical: 'bg-red-500', High: 'bg-amber-400', Normal: 'bg-brand-dark' };
+
+    function timeAgo(d) {
+      const s = Math.floor((Date.now() - new Date(d)) / 1000);
+      if (s < 60) return s + 's ago';
+      if (s < 3600) return Math.floor(s/60) + 'm ago';
+      if (s < 86400) return Math.floor(s/3600) + 'h ago';
+      return Math.floor(s/86400) + 'd ago';
+    }
+
+    function renderNotifs(items) {
+      if (!items || !items.length) {
+        list.innerHTML = '<div class="flex flex-col items-center py-8 gap-2 text-slate-400"><i class="fa-solid fa-bell-slash text-2xl text-slate-300"></i><p class="text-xs font-bold">No notifications</p></div>';
+        return;
+      }
+      list.innerHTML = items.slice(0,20).map(n => {
+        const unread = (n.notification_status||'').toLowerCase()==='unread';
+        const dot = priorityColour[n.priority] || 'bg-brand-dark';
+        return '<div class="flex items-start gap-3 px-4 py-3 '+(unread?'bg-brand-light/40':'hover:bg-slate-50')+' transition">'+
+          '<span class="mt-1.5 h-2 w-2 rounded-full shrink-0 '+(unread?dot:'bg-slate-300')+'"></span>'+
+          '<div class="min-w-0 flex-1">'+
+            '<p class="text-[11px] font-bold text-slate-800 truncate">'+(n.title||n.action_name||'Notification')+'</p>'+
+            '<p class="text-[10px] text-slate-500 mt-0.5 line-clamp-2">'+(n.message||'')+'</p>'+
+            '<p class="text-[9px] text-slate-400 mt-1 font-mono">'+(n.created_at?timeAgo(n.created_at):'')+'</p>'+
+          '</div></div>';
+      }).join('');
+    }
+
+    function fetchNotifs() {
+      fetch(API,{credentials:'same-origin'}).then(r=>r.json()).then(json=>{
+        const count = json.unread_count||0;
+        if(badge) badge.classList.toggle('hidden', count===0);
+        window._notifCache = json.data||[];
+        if(drop && !drop.classList.contains('hidden')) { renderNotifs(window._notifCache); loaded=true; }
+      }).catch(()=>{});
+    }
+
+    window.toggleNotifDropdown = function(e) {
+      e.stopPropagation();
+      const pd = document.getElementById('profileDropdownMenu');
+      if(pd) pd.classList.add('hidden');
+      if(!drop) return;
+      const wasHidden = drop.classList.contains('hidden');
+      drop.classList.toggle('hidden', !wasHidden);
+      if(wasHidden && !loaded) {
+        list.innerHTML = '<div class="flex items-center justify-center py-8"><div class="h-6 w-6 border-2 border-brand-medium border-t-transparent rounded-full animate-spin"></div></div>';
+        if(window._notifCache){ renderNotifs(window._notifCache); loaded=true; } else { fetchNotifs(); loaded=true; }
+      }
+    };
+
+    window.markAllNotifsRead = function() {
+      fetch(API,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({mark_all:true})})
+        .then(()=>{ if(badge) badge.classList.add('hidden'); loaded=false; fetchNotifs(); }).catch(()=>{});
+    };
+
+    document.addEventListener('click', function(e) {
+      if(drop && !drop.classList.contains('hidden')){
+        const wrapper = document.getElementById('notifWrapper');
+        if(wrapper && !wrapper.contains(e.target)) drop.classList.add('hidden');
+      }
+    });
+
+    fetchNotifs();
+    setInterval(fetchNotifs, 60000);
+  })();
+  </script>
 
   <div class="flex-1 flex relative">
