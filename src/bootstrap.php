@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 if (!ob_get_level()) {
     ob_start();
@@ -93,9 +93,10 @@ $permService = new \App\Services\PermissionService($permRepo);
 $treasuryService = class_exists('\App\Services\TreasuryService') ? new \App\Services\TreasuryService($treasuryRepo, $db ?? null) : null;
 $auditService = class_exists('\App\Services\AuditService') ? new \App\Services\AuditService($treasuryRepo, $db ?? null) : null;
 $paymentService = class_exists('\App\Services\CitizenPaymentService') ? new \App\Services\CitizenPaymentService($db ?? null) : null;
-$notificationService = class_exists('\\App\\Services\\NotificationService') ? new \\App\\Services\\NotificationService() : null;
+$notificationService = class_exists('\App\Services\NotificationService') ? new \App\Services\NotificationService() : null;
 
 // Initialize Header Service (and build user)
 $headerService = new \App\Services\HeaderService($userService, $permService, $authService);
 $headerUser = $headerService->buildHeaderUser();
+
 
