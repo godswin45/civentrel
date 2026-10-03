@@ -645,6 +645,8 @@ const API_GROUPS = [
           { name: 'fiscal_year',      type: 'integer', req: false, desc: 'Fiscal year for this request (e.g. 2026). Defaults to current year' },
           { name: 'quarter',          type: 'string',  req: false, desc: 'Q1 | Q2 | Q3 | Q4. Defaults to the current quarter' },
           { name: 'fund_id',          type: 'string',  req: false, desc: 'Fund code: GF (General Fund) | SEF | TF. Defaults to GF' },
+          { name: 'supporting_document', type: 'file', req: false, desc: 'File upload (PDF/Image) for the supporting document (Requires multipart/form-data)' },
+          { name: 'callback_url',     type: 'string',  req: false, desc: 'Your module\'s URL. When Treasury approves, rejects, or releases this request, it POSTs JSON here: { event, request_id, request_no, status, requested_amount, approved_by, approved_at, rejection_reason, timestamp }. Header X-Civentral-Event = budget.approved | budget.rejected | budget.released. Respond with HTTP 2xx.' },
         ],
         successResponse: `{
   <span class="key">"status"</span>: <span class="str">"success"</span>,
@@ -670,21 +672,11 @@ const API_GROUPS = [
   <span class="key">"required_fields"</span>: { <span class="cmt">/* field descriptions */</span> }
 }`,
         curlExample: `curl -X POST "${BASE_PROD}${BUDGET_PATH}" \\
-  -H "Content-Type: application/json" \\
   -H "X-API-Key: your-api-key" \\
-  -d '{
-    "department_name":  "Department of Health",
-    "department_code":  "HEALTH",
-    "project_title":    "Medical Supplies Procurement Q3",
-    "requested_amount": 150000,
-    "budget_type":      "operational",
-    "description":      "Procurement of essential medical supplies for Q3 2026",
-    "justification":    "Supplies are critically low and need immediate replenishment",
-    "requested_by":     "Dr. Maria Santos",
-    "fiscal_year":      2026,
-    "quarter":          "Q3",
-    "fund_id":          "GF"
-  }'`,
+  -F "department_name=Department of Health" \\
+  -F "project_title=Medical Supplies Procurement Q3" \\
+  -F "requested_amount=150000" \\
+  -F "supporting_document=@/path/to/local/proposal.pdf"`,
       },
       {
         method: 'GET',

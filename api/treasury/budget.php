@@ -14,6 +14,11 @@
  *  PUT    /budget/requests/{id}/approve — Approve a budget request
  *  PUT    /budget/requests/{id}/reject  — Reject a budget request
  *  PUT    /budget/requests/{id}/release — Release approved budget
+ *  GET    /budget/requests/number/{no}  — Check status by request number (e.g. BR-2026-ABC123)
+ *  POST   /budget/requests/{id}/resend-callback — Re-send the decision to the requester's callback_url
+ *
+ *  CALLBACK: submit `callback_url` with the request; Treasury will POST the decision
+ *            (approved / rejected / released) to that URL as JSON.
  * ============================================================
  */
 
@@ -94,6 +99,15 @@ try {
                 apiRespond(['status' => 'success', 'data' => $request]);
             }
 
+            // GET /budget/requests/number/{request_no} — Lookup by request number
+            if (preg_match('#^/budget/requests/number/([^/]+)$#', $path, $m)) {
+                $request = $treasuryRepo->getBudgetRequestByNumber(urldecode($m[1]));
+                if (!$request) {
+                    apiRespond(['status' => 'error', 'message' => 'Budget request not found.'], 404);
+                }
+                apiRespond(['status' => 'success', 'data' => $request]);
+            }
+
             // GET /budget/department/{code} — By department
             if (preg_match('#^/budget/department/([^/]+)$#', $path, $m)) {
                 $requests = $treasuryService->getBudgetRequestsByDepartment(urldecode($m[1]));
@@ -108,6 +122,21 @@ try {
 
         // ── POST ─────────────────────────────────────────────────────────────
         case 'POST':
+            // POST /budget/requests/{id}/resend-callback — Re-deliver decision to requester
+            if (preg_match('#^/budget/requests/(\d+)/resend-callback$#', $path, $m)) {
+                $request = $treasuryService->getBudgetRequestById((int)$m[1]);
+                if (!$request) {
+                    apiRespond(['status' => 'error', 'message' => 'Budget request not found.'], 404);
+                }
+                $event = 'budget.' . str_replace(' ', '_', strtolower((string)($request['status'] ?? 'pending')));
+                $delivery = $treasuryService->notifyBudgetRequester($request, $event);
+                apiRespond([
+                    'status'   => $delivery['delivered'] ? 'success' : 'error',
+                    'message'  => $delivery['delivered'] ? 'Callback delivered.' : 'Callback not delivered: ' . ($delivery['reason'] ?? 'unknown'),
+                    'delivery' => $delivery,
+                ], $delivery['delivered'] ? 200 : 502);
+            }
+
             if ($path === '/budget/requests' || $path === '/' || $path === '') {
                 $input = json_decode(file_get_contents('php://input'), true) ?? [];
                 if (empty($input) && !empty($_POST)) {
@@ -169,6 +198,15 @@ try {
                     ], 422);
                 }
 
+                // Optional callback URL — Treasury will POST the decision here
+                $callbackUrl = trim((string)($input['callback_url'] ?? ''));
+                if ($callbackUrl !== '') {
+                    $cbScheme = strtolower((string) parse_url($callbackUrl, PHP_URL_SCHEME));
+                    if (!filter_var($callbackUrl, FILTER_VALIDATE_URL) || !in_array($cbScheme, ['http', 'https'], true)) {
+                        apiRespond(['status' => 'error', 'message' => '`callback_url` must be a valid http(s) URL.'], 422);
+                    }
+                }
+
                 $result = $treasuryService->createBudgetRequest([
                     'department_name'  => trim($input['department_name']),
                     'department_code'  => strtoupper(trim($input['department_code'] ?? 'GEN')),
@@ -182,11 +220,13 @@ try {
                     'requested_by'     => trim($input['requested_by'] ?? 'External API'),
                     'justification'    => trim($input['justification'] ?? ''),
                     'supporting_document' => $uploadedFilePath,
+                    'callback_url'     => $callbackUrl !== '' ? $callbackUrl : null,
                 ]);
 
                 apiRespond([
                     'status'  => 'success',
-                    'message' => 'Budget request submitted successfully and is now pending review.',
+                    'message' => 'Budget request submitted successfully and is now pending review.'
+                        . ($callbackUrl !== '' ? ' The decision will be sent to your callback_url.' : ''),
                     'data'    => $result,
                 ], 201);
             }

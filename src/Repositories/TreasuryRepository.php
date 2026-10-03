@@ -270,9 +270,45 @@ class TreasuryRepository {
     }
 
     /**
+     * Ensure callback/webhook tracking columns exist on tr_budget_requests.
+     * Self-healing so the live database does not need a manual migration.
+     */
+    public function ensureBudgetCallbackColumns(): void {
+        static $checked = false;
+        if ($checked || !$this->db || !method_exists($this->db, 'getPdo')) {
+            return;
+        }
+        $checked = true;
+
+        $existing = $this->getTableColumns('tr_budget_requests');
+        if (empty($existing)) {
+            return;
+        }
+
+        $definitions = [
+            'callback_url'          => 'VARCHAR(500) NULL DEFAULT NULL',
+            'callback_status'       => 'VARCHAR(30) NULL DEFAULT NULL',
+            'callback_response'     => 'TEXT NULL',
+            'callback_attempted_at' => 'DATETIME NULL DEFAULT NULL',
+        ];
+
+        $pdo = $this->db->getPdo();
+        foreach ($definitions as $column => $definition) {
+            if (!in_array($column, $existing, true)) {
+                try {
+                    $pdo->exec("ALTER TABLE `tr_budget_requests` ADD COLUMN `{$column}` {$definition}");
+                } catch (\Throwable $e) {
+                    error_log('[Budget Callback] Could not add column ' . $column . ': ' . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    /**
      * Create budget request
      */
     public function createBudgetRequest(array $data): int {
+        $this->ensureBudgetCallbackColumns();
         $filtered = $this->filterTableColumns('tr_budget_requests', $data);
         return $this->db->insert('tr_budget_requests', $filtered);
     }
@@ -317,11 +353,28 @@ class TreasuryRepository {
      * Update budget request status
      */
     public function updateBudgetRequestStatus(int $id, string $status, array $data = []): bool {
+        $this->ensureBudgetCallbackColumns();
         $updateData = ['status' => strtolower($status)];
         if (!empty($data)) {
             $updateData = array_merge($updateData, $data);
         }
         $filtered = $this->filterTableColumns('tr_budget_requests', $updateData);
+        return $this->db->update('tr_budget_requests', $filtered, ['id' => $id]) > 0;
+    }
+
+    /**
+     * Record the result of a callback (webhook) delivery to the requesting module.
+     */
+    public function recordBudgetCallbackResult(int $id, string $callbackStatus, ?string $response): bool {
+        $this->ensureBudgetCallbackColumns();
+        $filtered = $this->filterTableColumns('tr_budget_requests', [
+            'callback_status'       => $callbackStatus,
+            'callback_response'     => $response !== null ? mb_substr($response, 0, 2000) : null,
+            'callback_attempted_at' => date('Y-m-d H:i:s'),
+        ]);
+        if (empty($filtered)) {
+            return false;
+        }
         return $this->db->update('tr_budget_requests', $filtered, ['id' => $id]) > 0;
     }
 

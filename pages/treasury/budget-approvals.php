@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         } elseif ($_POST['action'] === 'reject') {
             $treasuryService->updateBudgetRequestStatus((int)$_POST['request_id'], 'Rejected', [
-                'justification' => trim($_POST['justification'] ?? '')
+                'rejection_reason' => trim($_POST['justification'] ?? '')
             ]);
             $successMsg = 'Budget request rejected.';
             
@@ -86,6 +86,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     'record_id' => $_POST['request_id'],
                     'new_values' => json_encode(['status' => 'released'])
                 ]);
+            }
+        } elseif ($_POST['action'] === 'resend_callback') {
+            $req = $treasuryService->getBudgetRequestById((int)$_POST['request_id']);
+            $event = 'budget.' . str_replace(' ', '_', strtolower((string)($req['status'] ?? 'pending')));
+            $delivery = $treasuryService->notifyBudgetRequester($req, $event);
+            if ($delivery['delivered']) {
+                $successMsg = 'Decision re-sent to the requesting module.';
+            } else {
+                $errorMsg = 'Could not notify the requesting module: ' . ($delivery['reason'] ?? 'unknown error');
             }
         }
     } catch (Exception $e) {
@@ -190,6 +199,26 @@ include __DIR__ . '/../../includes/sidebar.php';
                         ($status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'))) ?>">
                     <?= htmlspecialchars($request['status']) ?>
                   </span>
+                  <?php if (!empty($request['callback_url'])): ?>
+                    <?php
+                      $cb = strtolower((string)($request['callback_status'] ?? 'waiting'));
+                      $cbClass = $cb === 'delivered' ? 'text-emerald-600' : ($cb === 'failed' ? 'text-red-600' : 'text-slate-400');
+                      $cbIcon  = $cb === 'delivered' ? 'fa-circle-check' : ($cb === 'failed' ? 'fa-triangle-exclamation' : 'fa-clock');
+                      $cbLabel = $cb === 'delivered' ? 'Module notified' : ($cb === 'failed' ? 'Notify failed' : 'Awaiting decision');
+                      $cbHost  = parse_url($request['callback_url'], PHP_URL_HOST) ?: $request['callback_url'];
+                    ?>
+                    <div class="mt-1.5 flex items-center gap-1 text-[10px] font-semibold <?= $cbClass ?>"
+                         title="<?= htmlspecialchars($cbHost . (!empty($request['callback_attempted_at']) ? ' · ' . $request['callback_attempted_at'] : '') . (!empty($request['callback_response']) ? "\n" . $request['callback_response'] : '')) ?>">
+                      <i class="fa-solid <?= $cbIcon ?>"></i> <?= $cbLabel ?>
+                    </div>
+                    <?php if ($status !== 'pending'): ?>
+                      <form method="post" class="mt-1">
+                        <input type="hidden" name="action" value="resend_callback">
+                        <input type="hidden" name="request_id" value="<?= (int) $request['id'] ?>">
+                        <button type="submit" class="text-[10px] font-bold text-brand-dark hover:underline"><i class="fa-solid fa-rotate-right mr-1"></i>Resend</button>
+                      </form>
+                    <?php endif; ?>
+                  <?php endif; ?>
                 </td>
                 <td class="px-5 py-4 min-w-[260px]">
                   <div class="flex flex-wrap items-center gap-2">

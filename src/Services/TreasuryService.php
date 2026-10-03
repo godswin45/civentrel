@@ -660,7 +660,9 @@ class TreasuryService {
             'reviewed_by'     => null,
             'approved_by'     => null,
             'approved_at'     => null,
-            'rejection_reason' => null
+            'rejection_reason' => null,
+            'callback_url'    => $input['callback_url'] ?? null,
+            'callback_status' => !empty($input['callback_url']) ? 'waiting' : null,
         ];
 
         $requestId = $this->treasuryRepo->createBudgetRequest($request);
@@ -751,7 +753,9 @@ class TreasuryService {
             'approved_at' => date('Y-m-d H:i:s'),
         ]);
 
-        return $this->treasuryRepo->getBudgetRequestById($requestId);
+        $updated = $this->treasuryRepo->getBudgetRequestById($requestId);
+        $this->notifyBudgetRequester($updated, 'budget.approved');
+        return $updated;
     }
 
     /**
@@ -776,7 +780,9 @@ class TreasuryService {
         // Update request status
         $this->treasuryRepo->updateBudgetRequestStatus($requestId, 'released');
 
-        return $this->treasuryRepo->getBudgetRequestById($requestId);
+        $updated = $this->treasuryRepo->getBudgetRequestById($requestId);
+        $this->notifyBudgetRequester($updated, 'budget.released');
+        return $updated;
     }
 
     /**
@@ -788,7 +794,109 @@ class TreasuryService {
             throw new \Exception('Budget request not found.');
         }
 
-        $this->treasuryRepo->updateBudgetRequestStatus($requestId, strtolower($status), $data);
-        return $this->treasuryRepo->getBudgetRequestById($requestId);
+        $normalized = strtolower($status);
+        $this->treasuryRepo->updateBudgetRequestStatus($requestId, $normalized, $data);
+        $updated = $this->treasuryRepo->getBudgetRequestById($requestId);
+
+        if (in_array($normalized, ['approved', 'rejected', 'released', 'under review'], true)) {
+            $this->notifyBudgetRequester($updated, 'budget.' . str_replace(' ', '_', $normalized));
+        }
+        return $updated;
+    }
+
+    /**
+     * Notify the requesting module (e.g. Logistics) about the decision on its budget request.
+     *
+     * If the request was submitted with a `callback_url`, Treasury POSTs a JSON payload to it.
+     * The payload is signed with HMAC-SHA256 (header X-Civentral-Signature) using
+     * BUDGET_WEBHOOK_SECRET (or BUDGET_API_KEY as fallback) so the receiver can verify it.
+     *
+     * Never throws: a failed delivery must not undo or block the approval itself.
+     */
+    public function notifyBudgetRequester(?array $request, string $event): array {
+        if (!$request) {
+            return ['delivered' => false, 'reason' => 'Request not found'];
+        }
+
+        $url = trim((string) ($request['callback_url'] ?? ''));
+        if ($url === '') {
+            return ['delivered' => false, 'reason' => 'No callback_url registered'];
+        }
+
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        if (!filter_var($url, FILTER_VALIDATE_URL) || !in_array($scheme, ['http', 'https'], true)) {
+            $this->treasuryRepo->recordBudgetCallbackResult((int) $request['id'], 'failed', 'Invalid callback_url');
+            return ['delivered' => false, 'reason' => 'Invalid callback_url'];
+        }
+
+        $payload = [
+            'event'            => $event,
+            'request_id'       => (int) $request['id'],
+            'request_no'       => $request['request_no'] ?? $request['request_number'] ?? null,
+            'status'           => strtolower((string) ($request['status'] ?? '')),
+            'department_name'  => $request['department_name'] ?? null,
+            'department_code'  => $request['department_code'] ?? null,
+            'project_title'    => $request['project_title'] ?? null,
+            'requested_amount' => (float) ($request['requested_amount'] ?? 0),
+            'fund_code'        => $request['fund_code'] ?? null,
+            'approved_by'      => $request['approved_by'] ?? null,
+            'approved_at'      => $request['approved_at'] ?? null,
+            'rejection_reason' => $request['rejection_reason'] ?? null,
+            'timestamp'        => date('c'),
+        ];
+        $body = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+        $headers = [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'User-Agent: CIVENTRAL-Treasury-Webhook/1.0',
+            'X-Civentral-Event: ' . $event,
+        ];
+        $secret = getenv('BUDGET_WEBHOOK_SECRET') ?: (getenv('BUDGET_API_KEY') ?: '');
+        if ($secret !== '') {
+            $headers[] = 'X-Civentral-Signature: sha256=' . hash_hmac('sha256', $body, $secret);
+        }
+
+        $responseBody = null;
+        $httpCode = 0;
+        $error = null;
+        try {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => $body,
+                CURLOPT_HTTPHEADER     => $headers,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT        => 8,
+                CURLOPT_FOLLOWLOCATION => false,
+            ]);
+            $responseBody = curl_exec($ch);
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if ($responseBody === false) {
+                $error = curl_error($ch);
+                $responseBody = null;
+            }
+            curl_close($ch);
+        } catch (\Throwable $e) {
+            $error = $e->getMessage();
+        }
+
+        $delivered = $httpCode >= 200 && $httpCode < 300;
+        $logText = $delivered
+            ? 'HTTP ' . $httpCode . ' ' . (string) $responseBody
+            : ($error ? 'Error: ' . $error : 'HTTP ' . $httpCode . ' ' . (string) $responseBody);
+
+        try {
+            $this->treasuryRepo->recordBudgetCallbackResult((int) $request['id'], $delivered ? 'delivered' : 'failed', $logText);
+        } catch (\Throwable $e) {
+            error_log('[Budget Callback] Could not record result: ' . $e->getMessage());
+        }
+
+        if (!$delivered) {
+            error_log('[Budget Callback] ' . $event . ' to ' . $url . ' failed: ' . $logText);
+        }
+
+        return ['delivered' => $delivered, 'http_code' => $httpCode, 'reason' => $delivered ? null : $logText];
     }
 }
