@@ -676,7 +676,30 @@ const API_GROUPS = [
   -F "department_name=Department of Health" \\
   -F "project_title=Medical Supplies Procurement Q3" \\
   -F "requested_amount=150000" \\
-  -F "supporting_document=@/path/to/local/proposal.pdf"`,
+  -F "callback_url=https://logistics.civentral.tech/api/budget-callback.php" \\
+  -F "supporting_document=@/path/to/local/proposal.pdf"
+
+# ── What Treasury POSTs to your callback_url when it decides ──
+# Headers: Content-Type: application/json
+#          X-Civentral-Event: budget.approved | budget.rejected | budget.released
+#          X-Civentral-Signature: sha256=&lt;HMAC of body&gt;   (only if a shared secret is configured)
+# Body:
+# {
+#   "event": "budget.approved",
+#   "request_id": 42,
+#   "request_no": "BR-2026-A1B2C3",
+#   "status": "approved",
+#   "department_name": "Logistics",
+#   "department_code": "LOG",
+#   "project_title": "Fuel Allocation Q4",
+#   "requested_amount": 150000,
+#   "fund_code": "GF",
+#   "approved_by": "Treasurer Juan dela Cruz",
+#   "approved_at": "2026-10-05 14:30:00",
+#   "rejection_reason": null,
+#   "timestamp": "2026-10-05T14:30:01+08:00"
+# }
+# Your endpoint must reply with HTTP 2xx (e.g. 200 {"received": true}).`,
       },
       {
         method: 'GET',
@@ -786,6 +809,49 @@ const API_GROUPS = [
   <span class="key">"data"</span>: { <span class="cmt">/* updated budget request with Released status */</span> }
 }`,
         curlExample: `curl -X PUT "${BASE_PROD}${BUDGET_PATH}/budget/requests/42/release" \\
+  -H "X-API-Key: your-api-key"`,
+      },
+      {
+        method: 'GET',
+        path: BUDGET_PATH,
+        pathSuffix: '/budget/requests/number/{request_no}',
+        summary: 'Check the status of a request using its request number',
+        auth: true,
+        params: [{ name: 'request_no', type: 'string', req: true, desc: 'The request number returned when you submitted (e.g. BR-2026-A1B2C3). Use this if your module has no callback_url and needs to poll for the decision.' }],
+        successResponse: `{
+  <span class="key">"status"</span>: <span class="str">"success"</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"id"</span>: <span class="num">42</span>,
+    <span class="key">"request_no"</span>: <span class="str">"BR-2026-A1B2C3"</span>,
+    <span class="key">"status"</span>: <span class="str">"rejected"</span>,
+    <span class="key">"rejection_reason"</span>: <span class="str">"Budget exceeded allocated ceiling for Q4."</span>,
+    <span class="key">"callback_status"</span>: <span class="str">"delivered"</span>
+  }
+}`,
+        errorResponse: `{
+  <span class="key">"status"</span>: <span class="str">"error"</span>,
+  <span class="key">"message"</span>: <span class="str">"Budget request not found."</span>
+}`,
+        curlExample: `curl -X GET "${BASE_PROD}${BUDGET_PATH}/budget/requests/number/BR-2026-A1B2C3" \\
+  -H "X-API-Key: your-api-key"`,
+      },
+      {
+        method: 'POST',
+        path: BUDGET_PATH,
+        pathSuffix: '/budget/requests/{id}/resend-callback',
+        summary: 'Re-send the decision to the requester\'s callback_url',
+        auth: true,
+        params: [{ name: 'id', type: 'integer', req: true, desc: 'Budget request ID (path parameter). Useful if the requesting module was offline when the decision was made.' }],
+        successResponse: `{
+  <span class="key">"status"</span>: <span class="str">"success"</span>,
+  <span class="key">"message"</span>: <span class="str">"Callback delivered."</span>,
+  <span class="key">"delivery"</span>: { <span class="key">"delivered"</span>: <span class="num">true</span>, <span class="key">"http_code"</span>: <span class="num">200</span> }
+}`,
+        errorResponse: `{
+  <span class="key">"status"</span>: <span class="str">"error"</span>,
+  <span class="key">"message"</span>: <span class="str">"Callback not delivered: No callback_url registered"</span>
+}`,
+        curlExample: `curl -X POST "${BASE_PROD}${BUDGET_PATH}/budget/requests/42/resend-callback" \\
   -H "X-API-Key: your-api-key"`,
       },
     ],
