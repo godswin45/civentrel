@@ -65,6 +65,12 @@ try {
     $auditService = null;
 }
 
+// Status values are stored lowercase in the DB; normalize once for display logic.
+$statusOf = fn($r) => strtolower(trim((string) ($r['status'] ?? '')));
+$countPending  = count(array_filter($budgetRequests, fn($r) => $statusOf($r) === 'pending'));
+$countApproved = count(array_filter($budgetRequests, fn($r) => in_array($statusOf($r), ['approved', 'released'], true)));
+$countRejected = count(array_filter($budgetRequests, fn($r) => $statusOf($r) === 'rejected'));
+
 $basePath = '../../';
 include __DIR__ . '/../../includes/header.php';
 include __DIR__ . '/../../includes/sidebar.php';
@@ -120,7 +126,7 @@ include __DIR__ . '/../../includes/sidebar.php';
           <div class="absolute top-0 left-0 w-1.5 h-full bg-amber-500"></div>
           <div class="space-y-1">
             <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Pending</span>
-            <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= count(array_filter($budgetRequests, fn($r) => $r['status'] === 'Pending')) ?></h3>
+            <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= $countPending ?></h3>
             <p class="text-[11px] text-amber-600 font-semibold">Awaiting review</p>
           </div>
           <div class="h-10 w-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-slate-100 transition">
@@ -132,7 +138,7 @@ include __DIR__ . '/../../includes/sidebar.php';
           <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
           <div class="space-y-1">
             <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Approved</span>
-            <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= count(array_filter($budgetRequests, fn($r) => $r['status'] === 'Approved' || $r['status'] === 'Released')) ?></h3>
+            <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= $countApproved ?></h3>
             <p class="text-[11px] text-emerald-600 font-semibold">Budget approved</p>
           </div>
           <div class="h-10 w-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-slate-100 transition">
@@ -144,7 +150,7 @@ include __DIR__ . '/../../includes/sidebar.php';
           <div class="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
           <div class="space-y-1">
             <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Rejected</span>
-            <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= count(array_filter($budgetRequests, fn($r) => $r['status'] === 'Rejected')) ?></h3>
+            <h3 class="text-2xl font-black text-slate-900 tracking-tight"><?= $countRejected ?></h3>
             <p class="text-[11px] text-red-600 font-semibold">Requests denied</p>
           </div>
           <div class="h-10 w-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-slate-100 transition">
@@ -235,7 +241,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-medium focus:ring-1 focus:ring-brand-medium transition"></textarea>
             </div>
 
-            <button type="submit" class="w-full py-3 px-4 bg-brand-medium hover:opacity-90 text-white font-bold rounded-lg text-sm transition shadow-sm focus:outline-none">
+            <button type="submit" data-loading-text="Submitting request..." class="w-full py-3 px-4 bg-brand-medium hover:opacity-90 text-white font-bold rounded-lg text-sm transition shadow-sm focus:outline-none">
               Submit Budget Request
             </button>
           </form>
@@ -322,33 +328,50 @@ include __DIR__ . '/../../includes/sidebar.php';
                   <?php endif; ?>
                 </td>
                 <td class="px-5 py-3 font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($request['requested_amount']) ?></td>
+                <?php $rs = $statusOf($request); ?>
                 <td class="px-5 py-3">
                   <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase
-                    <?= $request['status'] === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 
-                       ($request['status'] === 'Pending' ? 'bg-amber-100 text-amber-700' : 
-                       ($request['status'] === 'Released' ? 'bg-teal-100 text-teal-700' : 
-                       ($request['status'] === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'))) ?>">
+                    <?= $rs === 'approved' ? 'bg-emerald-100 text-emerald-700' : 
+                       ($rs === 'pending' ? 'bg-amber-100 text-amber-700' : 
+                       ($rs === 'released' ? 'bg-teal-100 text-teal-700' : 
+                       ($rs === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'))) ?>">
                     <?= htmlspecialchars($request['status']) ?>
                   </span>
                 </td>
-                <td class="px-5 py-3">
-                  <?php if ($request['status'] === 'Rejected' && !empty($request['justification'])): ?>
-                    <div class="text-red-600 text-xs max-w-xs truncate" title="<?= htmlspecialchars($request['justification']) ?>">
-                      <i class="fa-solid fa-circle-exclamation mr-1"></i>
-                      <?= htmlspecialchars(substr($request['justification'], 0, 50)) ?>...
+                <td class="px-5 py-3 max-w-xs">
+                  <?php if ($rs === 'rejected'): ?>
+                    <?php
+                      // Older rejections stored the reason in `justification`; new ones use `rejection_reason`.
+                      $reason = trim((string) ($request['rejection_reason'] ?? ''));
+                      if ($reason === '') $reason = trim((string) ($request['justification'] ?? ''));
+                    ?>
+                    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                      <div class="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-red-700">
+                        <i class="fa-solid fa-circle-exclamation"></i> Reason for rejection
+                      </div>
+                      <p class="mt-1 text-xs text-red-800 leading-relaxed whitespace-pre-line break-words"><?= $reason !== '' ? htmlspecialchars($reason) : '<span class="italic text-red-500">No reason was provided.</span>' ?></p>
+                      <?php if (!empty($request['updated_at'])): ?>
+                        <p class="mt-1.5 text-[10px] text-red-500">Decided <?= date('M j, Y g:i A', strtotime($request['updated_at'])) ?></p>
+                      <?php endif; ?>
                     </div>
-                  <?php elseif ($request['status'] === 'Approved'): ?>
+                  <?php elseif ($rs === 'approved'): ?>
                     <div class="text-emerald-600 text-xs">
                       <i class="fa-solid fa-check-circle mr-1"></i>
                       Approved by <?= htmlspecialchars($request['approved_by'] ?? 'Treasury') ?>
+                      <?php if (!empty($request['approved_at'])): ?>
+                        <span class="block text-[10px] text-emerald-500 mt-0.5"><?= date('M j, Y g:i A', strtotime($request['approved_at'])) ?> · awaiting release</span>
+                      <?php endif; ?>
                     </div>
-                  <?php elseif ($request['status'] === 'Released'): ?>
+                  <?php elseif ($rs === 'released'): ?>
                     <div class="text-teal-600 text-xs">
                       <i class="fa-solid fa-paper-plane mr-1"></i>
                       Funds released
+                      <?php if (!empty($request['approved_by'])): ?>
+                        <span class="block text-[10px] text-teal-500 mt-0.5">Approved by <?= htmlspecialchars($request['approved_by']) ?></span>
+                      <?php endif; ?>
                     </div>
                   <?php else: ?>
-                    <span class="text-slate-400 text-xs">Under review</span>
+                    <span class="text-slate-400 text-xs"><i class="fa-solid fa-hourglass-half mr-1"></i>Under review</span>
                   <?php endif; ?>
                 </td>
                 <td class="px-5 py-3 text-slate-500"><?= date('M j, Y g:i A', strtotime($request['created_at'])) ?></td>

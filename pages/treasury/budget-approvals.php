@@ -225,15 +225,25 @@ include __DIR__ . '/../../includes/sidebar.php';
                   <a href="download-budget-request.php?id=<?= (int) $request['id'] ?>" download title="Download request document" class="inline-flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-lg text-[11px] transition">
                     <i class="fa-solid fa-download"></i> Document
                   </a>
+                  <?php
+                    $confirmRef  = htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '', ENT_QUOTES);
+                    $confirmDept = htmlspecialchars($request['department_name'] ?? '', ENT_QUOTES);
+                    $confirmAmt  = htmlspecialchars($treasuryService->formatPeso($request['requested_amount']), ENT_QUOTES);
+                    $confirmFund = htmlspecialchars($request['fund_code'] ?? 'GF', ENT_QUOTES);
+                  ?>
                   <?php if ($status === 'pending'): ?>
-                      <form method="post" class="inline">
+                      <form method="post" class="inline"
+                        data-confirm="Approve <?= $confirmRef ?> for <?= $confirmDept ?>?&#10;&#10;Amount: <?= $confirmAmt ?>&#10;Fund: <?= $confirmFund ?>&#10;&#10;The requesting module will be notified of this decision."
+                        data-confirm-title="Approve budget request" data-confirm-ok="Yes, approve" data-confirm-variant="success">
                         <input type="hidden" name="action" value="approve">
                         <input type="hidden" name="request_id" value="<?= $request['id'] ?>">
                         <button type="submit" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-lg text-[11px] transition"><i class="fa-solid fa-check"></i> Approve</button>
                       </form>
                       <button onclick="showRejectModal(<?= $request['id'] ?>, '<?= htmlspecialchars($request['request_number'] ?? $request['request_no'] ?? '') ?>')" class="inline-flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 font-bold px-3 py-2 rounded-lg text-[11px] transition"><i class="fa-solid fa-xmark"></i> Reject</button>
                   <?php elseif ($status === 'approved'): ?>
-                    <form method="post" class="inline">
+                    <form method="post" class="inline"
+                      data-confirm="Release <?= $confirmAmt ?> to <?= $confirmDept ?> (<?= $confirmRef ?>)?&#10;&#10;This will deduct the amount from the <?= $confirmFund ?> fund balance and cannot be undone."
+                      data-confirm-title="Release funds" data-confirm-ok="Yes, release funds" data-confirm-variant="danger">
                       <input type="hidden" name="action" value="release">
                       <input type="hidden" name="request_id" value="<?= $request['id'] ?>">
                       <button type="submit" class="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-lg text-[11px] transition"><i class="fa-solid fa-paper-plane"></i> Release</button>
