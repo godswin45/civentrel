@@ -567,7 +567,7 @@
     </div>
     <div class="alert-box alert-warning">
       <i class="fa-solid fa-key alert-icon"></i>
-      <div><strong>Authentication:</strong> The Budget API supports optional API key authentication via the <code style="color:#d29922">X-API-Key</code> header when <code style="color:#d29922">BUDGET_API_KEY</code> is set in the server environment.</div>
+      <div><strong>Authentication:</strong> Budget API calls may require an <code style="color:#d29922">X-API-Key</code> header — ask the Treasury team for your module's key and always send it. Payment API calls must include the citizen's <code style="color:#d29922">citizen_user_id</code>.</div>
     </div>
   </header>
 
@@ -581,6 +581,7 @@
       <i class="fa-solid fa-list-ul jump-icon"></i>
       <select id="group-jump" onchange="jumpToGroup(this.value)">
         <option value="">Jump to group…</option>
+        <option value="guide">Integration Guide</option>
       </select>
     </div>
     <div class="method-filters" id="method-filters">
@@ -619,6 +620,73 @@ const PAYMENT_PATH  = '/api/citizen/treasury/payments.php';
 const WEBHOOK_PATH  = '/api/webhooks/paymongo.php';
 
 const API_GROUPS = [
+  {
+    id:    'guide',
+    title: 'Integration Guide',
+    desc:  'Comprehensive guide for integrating with the CIVENTRAL Revenue API.',
+    icon:  'fa-book',
+    color: '#39c5cf',
+    bg:    '#39c5cf22',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/guide/authentication',
+        summary: 'How to Connect & Authenticate',
+        auth: true,
+        successResponse: `{
+  "api_keys": "For Budget API requests, you must include an 'X-API-Key' header. Obtain this key from the Treasury team.",
+  "citizen_user_id": "For Payment API requests, include the 'citizen_user_id' in your request body to link the payment to a specific citizen in the CIVENTRAL database."
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/guide/budget-flow',
+        summary: 'Budget Request Flow & Callbacks',
+        auth: false,
+        successResponse: `{
+  "flow": [
+    "1. Submit Request: Call POST /api/treasury/budget.php with your 'callback_url'.",
+    "2. Pending Review: Request appears in Treasury dashboard.",
+    "3. Decision: Treasury Approves or Rejects the request.",
+    "4. Callback Delivery: The system POSTs a JSON payload to your 'callback_url'."
+  ],
+  "payload_example_approved": {
+    "event": "budget.approved",
+    "request_id": 42,
+    "status": "approved",
+    "approved_by": "Treasurer Name",
+    "rejection_reason": null
+  },
+  "payload_example_rejected": {
+    "event": "budget.rejected",
+    "request_id": 42,
+    "status": "rejected",
+    "rejection_reason": "Insufficient funds in General Fund."
+  },
+  "payload_example_released": {
+    "event": "budget.released",
+    "request_id": 42,
+    "status": "released"
+  }
+}`
+      },
+      {
+        method: 'GET',
+        path: '/guide/payments',
+        summary: 'Payment Integration & PayMongo',
+        auth: false,
+        successResponse: `{
+  "flow": [
+    "1. Initiate Payment: Call POST /api/citizen/treasury/payments.php with payment details.",
+    "2. Checkout URL: Redirect the citizen to the 'checkout_url' returned in the response.",
+    "3. Webhook: PayMongo notifies our webhook endpoint when payment is successful.",
+    "4. Settlement: System generates Official Receipt and updates transaction status."
+  ],
+  "paymongo_webhook": "The webhook at /api/webhooks/paymongo.php handles 'checkout_session.payment.paid'. No action is required from your module, but you can query the payment status via GET /api/citizen/treasury/payments.php?citizen_id={id}."
+}`
+      }
+    ]
+  },
   {
     id:    'budget',
     title: 'Budget Requests',
