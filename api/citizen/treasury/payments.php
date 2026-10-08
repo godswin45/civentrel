@@ -41,9 +41,9 @@
  * }
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Bootstrap MUST come first — it calls session_set_cookie_params()
+// before session_start(), which must happen before any headers are sent.
+require_once __DIR__ . '/../../../src/bootstrap.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -56,10 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
-
-require_once __DIR__ . '/../../../src/bootstrap.php';
-date_default_timezone_set('Asia/Manila');
-require_once __DIR__ . '/../../../src/Services/CitizenPaymentService.php';
 
 function respond(array $payload, int $statusCode = 200): void {
     http_response_code($statusCode);
