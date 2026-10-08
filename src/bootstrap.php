@@ -16,8 +16,13 @@ if (session_status() === PHP_SESSION_NONE) {
             $cookiePath = $m[1] . '/';
         }
     }
-    session_set_cookie_params(['path' => $cookiePath, 'httponly' => true, 'samesite' => 'Lax']);
-    session_start();
+    
+    if (!headers_sent()) {
+        session_set_cookie_params(['path' => $cookiePath, 'httponly' => true, 'samesite' => 'Lax']);
+        session_start();
+    } else {
+        @session_start();
+    }
 }
 
 // Load .env variables
