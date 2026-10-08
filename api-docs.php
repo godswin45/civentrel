@@ -632,58 +632,167 @@ const API_GROUPS = [
         method: 'GET',
         path: '/guide/authentication',
         summary: 'How to Connect & Authenticate',
-        auth: true,
+        auth: false,
+        curlExample: `# No prior setup or whitelisting is needed.
+# The Treasury API is open to ALL modules on the CIVENTRAL platform.
+# CORS is fully open (Access-Control-Allow-Origin: *).
+
+# ── Budget API ──
+# Include your X-API-Key header (get it from the Treasury team):
+curl -X POST "https://revenue.civentral.tech/api/treasury/budget.php" \\
+  -H "X-API-Key: your-module-api-key" \\
+  -H "Content-Type: application/json" \\
+  -d '{ "department_name": "Transport", "project_title": "...", "requested_amount": 50000 }'
+
+# ── Payment API ──
+# No API key needed. Just pass citizen_user_id in the body.
+# citizen_user_id = the logged-in citizen's ID from the CIVENTRAL citizen database.
+curl -X POST "https://revenue.civentral.tech/api/citizen/treasury/payments.php" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "taxpayer_name":   "Juan dela Cruz",
+    "account_number":  "T-12345",
+    "email":           "juan@example.com",
+    "payment_type":    "Transport Fee",
+    "amount":          150,
+    "payment_method":  "GCash",
+    "citizen_user_id": 88,
+    "source_module":   "transport"
+  }'`,
         successResponse: `{
-  "api_keys": "For Budget API requests, you must include an 'X-API-Key' header. Obtain this key from the Treasury team.",
-  "citizen_user_id": "For Payment API requests, include the 'citizen_user_id' in your request body to link the payment to a specific citizen in the CIVENTRAL database."
+  "cors": "Access-Control-Allow-Origin: * — No whitelist. Any module can connect immediately.",
+  "budget_api_auth": {
+    "header": "X-API-Key: your-module-api-key",
+    "note": "Request your API key from the Treasury team (one-time setup)."
+  },
+  "payment_api_auth": {
+    "field": "citizen_user_id",
+    "type": "integer",
+    "required": true,
+    "note": "Pass the citizen's ID from the CIVENTRAL shared citizen database. No session or API key required."
+  },
+  "source_module": {
+    "field": "source_module",
+    "type": "string",
+    "required": false,
+    "example": "transport",
+    "note": "Identifies which module sent the payment. Used for reporting and fund routing."
+  }
 }`,
       },
       {
         method: 'POST',
         path: '/guide/budget-flow',
-        summary: 'Budget Request Flow & Callbacks',
+        summary: 'Budget Request Flow & Decision Callbacks',
         auth: false,
+        curlExample: `# Step 1 — Submit a budget request with your callback_url
+curl -X POST "https://revenue.civentral.tech/api/treasury/budget.php" \\
+  -H "X-API-Key: your-api-key" \\
+  -F "department_name=Department of Transport" \\
+  -F "department_code=TRANSPORT" \\
+  -F "project_title=Fuel Allocation Q4" \\
+  -F "requested_amount=50000" \\
+  -F "callback_url=https://transport.civentral.tech/api/budget-callback.php"
+
+# Step 2 — Treasury reviews and decides (approve / reject / release)
+
+# Step 3 — Treasury POSTs this JSON to YOUR callback_url:
+# Headers sent to your endpoint:
+#   Content-Type: application/json
+#   X-Civentral-Event: budget.approved | budget.rejected | budget.released
+
+# Approved payload:
+# {
+#   "event": "budget.approved",
+#   "request_id": 42,
+#   "request_no": "BR-2026-A1B2C3",
+#   "status": "approved",
+#   "department_name": "Department of Transport",
+#   "department_code": "TRANSPORT",
+#   "project_title": "Fuel Allocation Q4",
+#   "requested_amount": 50000,
+#   "fund_code": "GF",
+#   "approved_by": "Treasurer Juan dela Cruz",
+#   "approved_at": "2026-10-08 22:30:00",
+#   "rejection_reason": null,
+#   "timestamp": "2026-10-08T22:30:01+08:00"
+# }
+
+# Rejected payload:
+# {
+#   "event": "budget.rejected",
+#   "request_id": 42,
+#   "status": "rejected",
+#   "rejection_reason": "Budget exceeded allocated ceiling for Q4.",
+#   "approved_by": "Treasurer Juan dela Cruz",
+#   "approved_at": "2026-10-08 22:30:00",
+#   "timestamp": "2026-10-08T22:30:01+08:00"
+# }
+
+# Step 4 — Your callback endpoint must reply with HTTP 200:
+# { "received": true }`,
         successResponse: `{
-  "flow": [
-    "1. Submit Request: Call POST /api/treasury/budget.php with your 'callback_url'.",
-    "2. Pending Review: Request appears in Treasury dashboard.",
-    "3. Decision: Treasury Approves or Rejects the request.",
-    "4. Callback Delivery: The system POSTs a JSON payload to your 'callback_url'."
-  ],
-  "payload_example_approved": {
-    "event": "budget.approved",
-    "request_id": 42,
-    "status": "approved",
-    "approved_by": "Treasurer Name",
-    "rejection_reason": null
+  "step_1": "POST /api/treasury/budget.php — submit request with callback_url",
+  "step_2": "Treasury reviews in their dashboard",
+  "step_3": "Treasury approves, rejects, or releases — system POSTs to your callback_url",
+  "step_4": "Your endpoint replies HTTP 200 { \\"received\\": true }",
+  "events": {
+    "budget.approved":  "Request was approved — fund is reserved",
+    "budget.rejected":  "Request was rejected — see rejection_reason field",
+    "budget.released":  "Funds have been physically released to your department"
   },
-  "payload_example_rejected": {
-    "event": "budget.rejected",
-    "request_id": 42,
-    "status": "rejected",
-    "rejection_reason": "Insufficient funds in General Fund."
-  },
-  "payload_example_released": {
-    "event": "budget.released",
-    "request_id": 42,
-    "status": "released"
-  }
-}`
+  "no_callback_url": "If you did not provide a callback_url, poll GET /budget/requests/number/{request_no} to check status."
+}`,
       },
       {
         method: 'GET',
         path: '/guide/payments',
         summary: 'Payment Integration & PayMongo',
         auth: false,
+        curlExample: `# Step 1 — POST payment request from your module
+curl -X POST "https://revenue.civentral.tech/api/citizen/treasury/payments.php" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "taxpayer_name":   "Maria Santos",
+    "account_number":  "T-20485",
+    "email":           "maria@example.com",
+    "payment_type":    "Transport Fee",
+    "amount":          150,
+    "payment_method":  "GCash",
+    "citizen_user_id": 88,
+    "source_module":   "transport",
+    "notes":           "Monthly transport pass"
+  }'
+
+# Step 2 — Redirect citizen to the checkout_url from the response
+# { "checkout_url": "https://checkout.paymongo.com/cs_xxxx#pk_live_xxxx" }
+
+# Step 3 — Citizen pays via GCash / PayMaya / Card on PayMongo
+
+# Step 4 — PayMongo webhook fires automatically to Treasury
+# Treasury generates Official Receipt and marks payment Completed
+
+# Step 5 — Check payment status (optional)
+curl -X GET "https://revenue.civentral.tech/api/citizen/treasury/payments.php?citizen_id=88"`,
         successResponse: `{
-  "flow": [
-    "1. Initiate Payment: Call POST /api/citizen/treasury/payments.php with payment details.",
-    "2. Checkout URL: Redirect the citizen to the 'checkout_url' returned in the response.",
-    "3. Webhook: PayMongo notifies our webhook endpoint when payment is successful.",
-    "4. Settlement: System generates Official Receipt and updates transaction status."
-  ],
-  "paymongo_webhook": "The webhook at /api/webhooks/paymongo.php handles 'checkout_session.payment.paid'. No action is required from your module, but you can query the payment status via GET /api/citizen/treasury/payments.php?citizen_id={id}."
-}`
+  "cors_policy": "Open — Access-Control-Allow-Origin: * — no whitelist, any module can call this",
+  "service_fee": "1% of amount is added automatically by Treasury (e.g. PHP 150 → PHP 151.50 total)",
+  "payment_methods": ["GCash", "PayMaya", "Bank Transfer", "Debit/Credit Card"],
+  "required_fields": {
+    "taxpayer_name":   "Full name of the citizen",
+    "account_number":  "Citizen reference or account number",
+    "email":           "For PayMongo receipt",
+    "payment_type":    "Any descriptive string (e.g. Transport Fee, Health Fee)",
+    "amount":          "Amount in PHP — Treasury adds the service fee on top",
+    "payment_method":  "GCash | PayMaya | Bank Transfer | Debit/Credit Card",
+    "citizen_user_id": "REQUIRED for cross-module calls — citizen ID from CIVENTRAL database"
+  },
+  "optional_fields": {
+    "source_module":   "Your module name (e.g. transport, health) — used for fund routing",
+    "application_id":  "Your module's internal application/record ID for reconciliation",
+    "notes":           "Additional context about the payment"
+  }
+}`,
       }
     ]
   },
