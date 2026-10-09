@@ -93,9 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $successMsg = 'Voucher submitted for release.';
 
         } elseif (($_POST['action'] ?? '') === 'release_voucher') {
-          if (!$treasuryService->verifyReleaseCode((string) ($_POST['release_code'] ?? ''))) {
-            throw new Exception('Invalid release confirmation code.');
-          }
             $treasuryService->releaseVoucher($_POST['voucher_id']);
             
             // Log the transaction
@@ -268,7 +265,18 @@ include __DIR__ . '/../../includes/sidebar.php';
                 </td>
                 <td class="px-5 py-3 text-right">
                   <?php if (strtolower($v['status']) === 'pending'): ?>
-                  <button type="button" onclick="openReleaseModal(<?= (int) $v['id'] ?>, '<?= htmlspecialchars(addslashes((string) ($v['payee'] ?? ''))) ?>', '<?= number_format((float) $v['amount'], 2, '.', '') ?>')" class="text-[11px] font-bold text-brand-dark hover:underline">Release</button>
+                  <?php
+                    $confirmPayee = htmlspecialchars((string) ($v['payee'] ?? ''), ENT_QUOTES);
+                    $confirmAmt   = htmlspecialchars($treasuryService->formatPeso($v['amount']), ENT_QUOTES);
+                    $confirmFund  = htmlspecialchars(strtoupper($v['fund_code'] ?? ($v['fund_id'] ?? '')), ENT_QUOTES);
+                  ?>
+                  <form method="post" class="inline"
+                        data-confirm="Release <?= $confirmAmt ?> to <?= $confirmPayee ?>?&#10;&#10;This will deduct the amount from the <?= $confirmFund ?> fund balance and cannot be undone."
+                        data-confirm-title="Confirm voucher release" data-confirm-ok="Confirm release" data-confirm-variant="danger">
+                    <input type="hidden" name="action" value="release_voucher">
+                    <input type="hidden" name="voucher_id" value="<?= (int) $v['id'] ?>">
+                    <button type="submit" class="text-[11px] font-bold text-brand-dark hover:underline">Release</button>
+                  </form>
                   <?php else: ?>
                   <span class="text-[10px] text-slate-400"><?= $v['disbursement_date'] ? date('M j, Y', strtotime($v['disbursement_date'])) : '-' ?></span>
                   <?php endif; ?>
@@ -290,49 +298,5 @@ include __DIR__ . '/../../includes/sidebar.php';
       ?>
     </main>
 
-    <div id="releaseModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Authorization required</p>
-            <h2 class="mt-1 text-lg font-black text-slate-900">Confirm voucher release</h2>
-          </div>
-          <button type="button" onclick="closeReleaseModal()" class="text-slate-400 hover:text-slate-700" title="Close">
-            <i class="fa-solid fa-xmark text-lg"></i>
-          </button>
-        </div>
-        <p class="mt-4 text-sm leading-relaxed text-slate-600">Enter the designated release code to release <strong id="releaseModalAmount"></strong> to <strong id="releaseModalPayee"></strong>.</p>
-        <form method="post" class="mt-5 space-y-4">
-          <input type="hidden" name="action" value="release_voucher">
-          <input type="hidden" name="voucher_id" id="releaseVoucherId">
-          <div>
-            <label for="releaseCode" class="mb-1.5 block text-xs font-bold text-slate-600">Confirmation code</label>
-            <input type="password" name="release_code" id="releaseCode" inputmode="numeric" autocomplete="off" required maxlength="32"
-              class="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm tracking-[0.2em] text-slate-900 focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/20">
-          </div>
-          <div class="flex justify-end gap-2">
-            <button type="button" onclick="closeReleaseModal()" class="rounded-lg bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200">Cancel</button>
-            <button type="submit" class="rounded-lg bg-brand-dark px-4 py-2.5 text-xs font-bold text-white hover:opacity-90">Confirm release</button>
-          </div>
-        </form>
-      </div>
-    </div>
-    <script>
-      function openReleaseModal(voucherId, payee, amount) {
-        document.getElementById('releaseVoucherId').value = voucherId;
-        document.getElementById('releaseModalPayee').textContent = payee;
-        document.getElementById('releaseModalAmount').textContent = '₱' + amount;
-        document.getElementById('releaseCode').value = '';
-        const modal = document.getElementById('releaseModal');
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        document.getElementById('releaseCode').focus();
-      }
 
-      function closeReleaseModal() {
-        const modal = document.getElementById('releaseModal');
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-      }
-    </script>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
