@@ -14,6 +14,8 @@ try {
     require __DIR__ . '/../pages/treasury/print-order-of-payment.php';
     $output = ob_get_clean();
     echo "SUCCESS\n";
+    echo "Length: " . strlen($output) . "\n";
+    echo substr($output, 0, 500);
 } catch (\Throwable $e) {
     echo "FATAL ERROR: " . $e->getMessage() . "\n";
     echo "File: " . $e->getFile() . " Line: " . $e->getLine();
