@@ -1,9 +1,7 @@
 <?php
-require_once __DIR__ . '/../../src/bootstrap.php';
-if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) { header('Location: ../../login.php'); exit; }
-
 $basePath = '../../';
 require_once __DIR__ . '/../../src/bootstrap.php';
+
 // Access Control: Only Superadmins can manage Access Boundaries
 if (empty($headerUser['is_superadmin'])) {
     header("Location: ../dashboard.php");

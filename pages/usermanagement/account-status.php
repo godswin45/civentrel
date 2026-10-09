@@ -1,9 +1,7 @@
 <?php
-require_once __DIR__ . '/../../src/bootstrap.php';
-if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) { header('Location: ../../login.php'); exit; }
-
 $basePath = '../../';
 require_once __DIR__ . '/../../src/bootstrap.php';
+
 $canAccessAccountStatus = !empty($headerUser['is_superadmin']) || 
                           !empty($headerUser['is_global_access']) || 
                           (!empty($headerUser['granted_resources']) && array_filter($headerUser['granted_resources'], function($r) {

@@ -1,8 +1,6 @@
 <?php
 require_once __DIR__ . '/../../src/bootstrap.php';
-if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) { header('Location: ../../login.php'); exit; }
 
-require_once __DIR__ . '/../../src/bootstrap.php';
 // Allow anonymous access for citizens (no auth required)
 // Citizens can use the system without logging in
 
