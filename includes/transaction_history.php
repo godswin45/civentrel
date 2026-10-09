@@ -4,6 +4,22 @@
  * Reusable component for displaying transaction history across treasury pages
  */
 
+if (!function_exists('formatPhilippineDateTime')) {
+    function formatPhilippineDateTime($dateTimeValue): array {
+        if (empty($dateTimeValue)) {
+            return ['—', '—'];
+        }
+
+        try {
+            $utc = new DateTimeImmutable((string) $dateTimeValue, new DateTimeZone('UTC'));
+            $local = $utc->setTimezone(new DateTimeZone('Asia/Manila'));
+            return [$local->format('M d, Y'), $local->format('h:i A')];
+        } catch (Exception $e) {
+            return [date('M d, Y', strtotime((string) $dateTimeValue)), date('h:i A', strtotime((string) $dateTimeValue))];
+        }
+    }
+}
+
 $canAccessAudit = !empty($headerUser['is_superadmin']) || !empty($headerUser['is_global_access']) || (isset($hasResourceAccess) && $hasResourceAccess(['audit', 'audit log', 'user activity', 'login history', 'data change']));
 if (!$canAccessAudit) {
     return; // Hide transaction history for regular staff without audit permissions
@@ -46,10 +62,11 @@ try {
       </thead>
       <tbody class="divide-y divide-slate-100">
         <?php foreach ($recentTransactions as $transaction): ?>
+        <?php [$txDate, $txTime] = formatPhilippineDateTime($transaction['created_at'] ?? null); ?>
         <tr class="hover:bg-brand-light/40 transition">
           <td class="px-5 py-3 text-slate-500">
-            <div class="font-mono text-xs"><?= date('M d, Y', strtotime($transaction['created_at'])) ?></div>
-            <div class="text-[10px] text-slate-400"><?= date('h:i A', strtotime($transaction['created_at'])) ?></div>
+            <div class="font-mono text-xs"><?= htmlspecialchars($txDate) ?></div>
+            <div class="text-[10px] text-slate-400"><?= htmlspecialchars($txTime) ?></div>
           </td>
           <td class="px-5 py-3 font-semibold text-slate-700">
             <?= htmlspecialchars($transaction['username']) ?>

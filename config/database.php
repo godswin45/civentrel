@@ -42,6 +42,7 @@ class Database {
 
         try {
             $this->pdo = new PDO($dsn, $user, $pass, $options);
+            $this->pdo->exec("SET time_zone = '+08:00'");
         } catch (\PDOException $e) {
             // Attempt to connect without dbname to create DB if needed
             try {
@@ -49,6 +50,7 @@ class Database {
                 $pdoTmp = new PDO($dsnNoDb, $user, $pass, $options);
                 $pdoTmp->exec("CREATE DATABASE IF NOT EXISTS `{$db}` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
                 $this->pdo = new PDO($dsn, $user, $pass, $options);
+                $this->pdo->exec("SET time_zone = '+08:00'");
             } catch (\PDOException $e2) {
                 throw new \PDOException("MySQL Connection Error: " . $e2->getMessage(), (int)$e2->getCode());
             }
