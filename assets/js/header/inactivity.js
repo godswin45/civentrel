@@ -1,7 +1,7 @@
 // Inactivity Countdown Timer (5 Minutes)
 let countdownInterval;
 let lastActivityTime = Date.now();
-const INACTIVITY_LIMIT = 30 * 60 * 1000;
+const INACTIVITY_LIMIT = 5 * 60 * 1000;
 
 function updateCountdownDisplay() {
   const now = Date.now();

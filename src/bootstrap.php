@@ -84,7 +84,7 @@ $authService = new \App\Services\AuthService();
 
 // Support dynamic basePath if defined before requiring bootstrap.php
 $currentBasePath = $basePath ?? '../';
-$sessionTimeout = new \App\Middleware\SessionTimeout(1800, $currentBasePath);
+$sessionTimeout = new \App\Middleware\SessionTimeout(300, $currentBasePath);
 $sessionTimeout->handle();
 
 // Initialize Repositories
