@@ -339,8 +339,8 @@ class TreasuryService {
         if (empty($voucher)) {
             throw new \Exception('Voucher not found.');
         }
-        if (strtolower($voucher['status']) !== 'pending') {
-            throw new \Exception('Voucher already processed.');
+        if (!in_array(strtolower($voucher['status']), ['pending', 'approved'])) {
+            throw new \Exception('Only pending or approved vouchers can be released.');
         }
 
         $fundCode = $voucher['fund_code'] ?? null;
@@ -365,6 +365,13 @@ class TreasuryService {
         $this->treasuryRepo->updateVoucherStatus($dvId, 'disbursed');
 
         return $this->treasuryRepo->getVoucherById($dvId);
+    }
+
+    /**
+     * Update a voucher's status (approve, reject, etc.)
+     */
+    public function updateVoucherStatus(int $dvId, string $status, array $extra = []): bool {
+        return $this->treasuryRepo->updateVoucherStatus($dvId, $status, $extra);
     }
 
     /**
@@ -471,6 +478,9 @@ class TreasuryService {
             'business_name'    => $input['business_name'],
             'owner_name'       => $input['owner_name'],
             'business_address' => $input['barangay'] ?? null,
+            'barangay'         => trim((string) ($input['barangay'] ?? '')),
+            'line_of_business' => trim((string) ($input['line_of_business'] ?? '')),
+            'permit_no'        => trim((string) ($input['permit_no'] ?? '')),
             'application_type' => 'new',
             'status'           => 'submitted',
             'documents'        => json_encode($documents),
