@@ -16,10 +16,16 @@ if (!in_array($activeTab, ['new', 'renewal', 'retirement'], true)) $activeTab = 
 
 try {
     $db = Database::getInstance();
+    // 1. Fix ENUM
     $db->query("ALTER TABLE tr_business_apps MODIFY COLUMN transaction_type ENUM('new', 'renewal', 'retirement') NOT NULL");
-} catch (\Throwable $e) {
-    die("DB ALTER ERROR: " . $e->getMessage());
-}
+    
+    // 2. Add missing columns safely
+    $cols = $db->query("SHOW COLUMNS FROM tr_business_apps")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('barangay', $cols)) $db->query("ALTER TABLE tr_business_apps ADD COLUMN barangay VARCHAR(255) NULL");
+    if (!in_array('line_of_business', $cols)) $db->query("ALTER TABLE tr_business_apps ADD COLUMN line_of_business VARCHAR(255) NULL");
+    if (!in_array('permit_no', $cols)) $db->query("ALTER TABLE tr_business_apps ADD COLUMN permit_no VARCHAR(255) NULL");
+    
+} catch (\Throwable $e) {}
 
 $editingApp = null;
 if (isset($_GET['edit'])) {
