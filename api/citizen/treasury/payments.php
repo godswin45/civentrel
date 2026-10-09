@@ -72,8 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    // Get request body
-    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    // Get request body (support both JSON and form-data)
+    $jsonInput = json_decode(file_get_contents('php://input'), true) ?? [];
+    $input = array_merge($_POST, $jsonInput);
     
     // Initialize payment service
     $paymentService = new \App\Services\CitizenPaymentService($db ?? null);
