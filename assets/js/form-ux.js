@@ -155,3 +155,46 @@
     if (e.persisted) document.querySelectorAll('form[data-submitting="1"]').forEach(resetForm);
   });
 })();
+
+  // -- Data Integrity (Title Case & Numeric Blocking) --------------
+  function toTitleCase(str) {
+    return str.replace(
+      /\w\S*/g,
+      function(txt) {
+        return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+      }
+    );
+  }
+
+  document.addEventListener('input', function(e) {
+    if (!e.target || !e.target.matches) return;
+    
+    // Title Case fields
+    if (e.target.matches('input[name="business_name"]')) {
+       let start = e.target.selectionStart;
+       let end = e.target.selectionEnd;
+       let val = e.target.value;
+       let newVal = toTitleCase(val);
+       if (val !== newVal) {
+           e.target.value = newVal;
+           e.target.setSelectionRange(start, end);
+       }
+    }
+
+    // Name fields (Title Case AND block numbers)
+    if (e.target.matches('input[name="owner_name"], input[name="stall_holder"]')) {
+       let val = e.target.value;
+       if (/[0-9]/.test(val)) {
+           val = val.replace(/[0-9]/g, '');
+           e.target.value = val;
+       }
+       let start = e.target.selectionStart;
+       let end = e.target.selectionEnd;
+       let newVal = toTitleCase(val);
+       if (val !== newVal) {
+           e.target.value = newVal;
+           e.target.setSelectionRange(start, end);
+       }
+    }
+  });
+
