@@ -56,7 +56,7 @@ if (!$app) {
                 max-width: 100%;
             }
         }
-    </script>
+    </style>
 </head>
 <body>
     
