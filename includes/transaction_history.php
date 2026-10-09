@@ -10,13 +10,13 @@ if (!function_exists('formatPhilippineDateTime')) {
             return ['—', '—'];
         }
 
-        try {
-            $utc = new DateTimeImmutable((string) $dateTimeValue, new DateTimeZone('UTC'));
-            $local = $utc->setTimezone(new DateTimeZone('Asia/Manila'));
-            return [$local->format('M d, Y'), $local->format('h:i A')];
-        } catch (Exception $e) {
-            return [date('M d, Y', strtotime((string) $dateTimeValue)), date('h:i A', strtotime((string) $dateTimeValue))];
+        $str = (string) $dateTimeValue;
+        $ts = is_numeric($dateTimeValue) ? (int) $dateTimeValue : strtotime($str);
+        if (!$ts) {
+            return ['—', '—'];
         }
+
+        return [date('M d, Y', $ts), date('h:i A', $ts)];
     }
 }
 

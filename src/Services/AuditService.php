@@ -71,15 +71,21 @@ class AuditService {
             return $stmt->fetchAll();
         }
 
+        $cleanModule = strtolower(trim($module));
+        $altModule1 = str_replace('_', '-', $cleanModule);
+        $altModule2 = str_replace('-', '_', $cleanModule);
+
         $query = "SELECT * FROM tr_audit_log 
-                   WHERE module = :module 
-                   OR (module IS NULL AND table_name LIKE :module_pattern)
+                   WHERE (module IN (:mod1, :mod2))
+                   OR (module IS NULL AND (table_name LIKE :module_pattern1 OR table_name LIKE :module_pattern2))
                    ORDER BY created_at DESC 
                    LIMIT :limit";
 
         $stmt = $pdo->prepare($query);
-        $stmt->bindValue(':module', strtolower(trim($module)), \PDO::PARAM_STR);
-        $stmt->bindValue(':module_pattern', "%" . strtolower(trim($module)) . "%", \PDO::PARAM_STR);
+        $stmt->bindValue(':mod1', $altModule1, \PDO::PARAM_STR);
+        $stmt->bindValue(':mod2', $altModule2, \PDO::PARAM_STR);
+        $stmt->bindValue(':module_pattern1', "%" . $altModule1 . "%", \PDO::PARAM_STR);
+        $stmt->bindValue(':module_pattern2', "%" . $altModule2 . "%", \PDO::PARAM_STR);
         $stmt->bindValue(':limit', (int) $limit, \PDO::PARAM_INT);
         $stmt->execute();
         

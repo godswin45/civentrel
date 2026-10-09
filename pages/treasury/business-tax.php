@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Log the transaction
         if ($auditService) {
             $auditService->logTransaction([
-                'user_id' => $_SESSION['user_id'] ?? null,
+                'user_id' => $_SESSION['user_id'] ?? ($_SESSION['employee_id'] ?? null),
                 'username' => $headerUser['full_name'] ?? 'System',
                 'module' => 'business_tax',
                 'action' => 'collect',
@@ -162,6 +162,13 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
           <?php if ($lastReceipt): ?>
             <div id="or-print-area" class="border-2 border-brand-border rounded-2xl p-8 bg-gradient-to-b from-brand-light/80 to-white relative w-full">
+
+              <!-- Print letterhead — hidden on screen -->
+              <div class="or-print-only text-center mb-4 pb-3 border-b-2 border-dashed border-brand-border">
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Republic of the Philippines</p>
+                <p class="text-sm font-black uppercase text-slate-900"><?= htmlspecialchars(getenv('LGU_NAME') ?: 'Municipality') ?></p>
+                <p class="text-xs text-slate-500">Office of the Municipal Treasurer</p>
+              </div>
 
               <div class="flex justify-between items-start border-b-2 border-dashed border-brand-border pb-4 mb-4">
                 <div>

@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Log the transaction
         if ($auditService) {
             $auditService->logTransaction([
-                'user_id' => $_SESSION['user_id'] ?? null,
+                'user_id' => $_SESSION['user_id'] ?? ($_SESSION['employee_id'] ?? null),
                 'username' => $headerUser['full_name'] ?? 'System',
                 'module' => 'market_stall',
                 'action' => 'collect',
@@ -169,6 +169,14 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
           <?php if ($lastReceipt): ?>
             <div id="or-print-area" class="border-2 border-brand-border rounded-2xl p-8 bg-gradient-to-b from-brand-light/80 to-white relative w-full">
+
+              <!-- Print letterhead — hidden on screen -->
+              <div class="or-print-only text-center mb-4 pb-3 border-b-2 border-dashed border-brand-border">
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Republic of the Philippines</p>
+                <p class="text-sm font-black uppercase text-slate-900"><?= htmlspecialchars(getenv('LGU_NAME') ?: 'Municipality') ?></p>
+                <p class="text-xs text-slate-500">Office of the Municipal Treasurer</p>
+              </div>
+
               <div class="flex justify-between items-start border-b-2 border-dashed border-brand-border pb-4 mb-4">
                 <div>
                   <div class="text-lg font-black text-brand-dark">Official Receipt</div>
@@ -207,6 +215,7 @@ include __DIR__ . '/../../includes/sidebar.php';
     </main>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
 <style>
+  .or-print-only { display: none; }
   @media print {
     header, aside, nav, footer, form,
     .no-print, .lg\:col-span-2,
@@ -222,6 +231,14 @@ include __DIR__ . '/../../includes/sidebar.php';
       border-radius: 0 !important;
       background: #fff !important;
       padding: 28px !important;
+      box-shadow: none !important;
+      position: static !important;
     }
+    #or-print-area * { color: #1e293b !important; }
+    #or-print-area .text-slate-400,
+    #or-print-area .text-slate-500 { color: #64748b !important; }
+    #or-print-area .text-brand-dark { color: #1e40af !important; }
+    .or-print-only { display: block !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
