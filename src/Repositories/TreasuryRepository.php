@@ -155,11 +155,15 @@ class TreasuryRepository {
      * Update voucher status
      */
     public function updateVoucherStatus(int $id, string $status, array $extra = []): bool {
-        // Ensure rejection_reason column exists
+        // Ensure the status ENUM includes all workflow values and rejection_reason column exists
         try {
+            $pdo = $this->db->getPdo();
+            // Expand status ENUM to support full workflow
+            $pdo->exec("ALTER TABLE tr_disbursements MODIFY COLUMN status ENUM('pending','approved','rejected','disbursed') NOT NULL DEFAULT 'pending'");
+            // Add rejection_reason column if missing
             $cols = $this->getTableColumns('tr_disbursements');
             if (!in_array('rejection_reason', $cols)) {
-                $this->db->getPdo()->exec("ALTER TABLE tr_disbursements ADD COLUMN rejection_reason TEXT NULL");
+                $pdo->exec("ALTER TABLE tr_disbursements ADD COLUMN rejection_reason TEXT NULL");
             }
         } catch (\Throwable $e) {}
 
