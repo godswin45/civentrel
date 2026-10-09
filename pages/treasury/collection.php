@@ -277,28 +277,48 @@ include __DIR__ . '/../../includes/sidebar.php';
 <style>
   .or-print-only { display: none; }
   @media print {
-    /* Hide EVERYTHING except the receipt */
-    body * { visibility: hidden !important; }
+    /* Hide all page chrome */
+    header, aside, nav, footer, form,
+    .no-print, .lg\:col-span-2,
+    .lg\:col-span-3 > div:first-child { display: none !important; }
 
-    /* Show only the receipt area and its children */
-    #or-print-area, #or-print-area * { visibility: visible !important; }
+    body, html { background: #fff !important; margin: 0; padding: 0; }
+    main { padding: 8px !important; margin: 0 !important; display: block !important; }
 
-    /* Position the receipt at top-left of the page */
+    /* Make grid a single column */
+    .grid { display: block !important; }
+    .lg\:col-span-3 {
+      width: 100% !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+    }
+
+    /* Receipt container */
     #or-print-area {
-      position: fixed !important;
-      top: 0; left: 50%;
-      transform: translateX(-50%);
       width: 420px !important;
+      max-width: 100% !important;
+      margin: 0 auto !important;
       border: 1.5px solid #94a3b8 !important;
       border-radius: 0 !important;
       background: #fff !important;
       padding: 28px !important;
       box-shadow: none !important;
+      position: static !important;
     }
 
-    /* Show print-only elements like letterhead & signature */
-    .or-print-only { display: block !important; visibility: visible !important; }
+    /* Force all text to be visible with explicit colors */
+    #or-print-area * { color: #1e293b !important; visibility: visible !important; }
+    #or-print-area .text-slate-400,
+    #or-print-area .text-slate-500 { color: #64748b !important; }
+    #or-print-area .text-brand-dark,
+    #or-print-area .text-brand-medium { color: #1e40af !important; }
+    #or-print-area .text-2xl { font-size: 22px !important; }
 
+    /* Show print-only elements like letterhead & signature */
+    .or-print-only { display: block !important; }
+
+    .shadow-xs, .shadow-sm { box-shadow: none !important; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
