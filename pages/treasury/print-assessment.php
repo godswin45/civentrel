@@ -18,8 +18,8 @@ if (!$app) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order of Payment - <?= htmlspecialchars($app['application_no']) ?></title>
-    <!-- Tailwind CSS (Include standard Tailwind for rendering the print view) -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Local CSS instead of CDN to prevent adblock/browser rendering blocks -->
+    <link rel="stylesheet" href="../../assets/css/style.css">
     <style>
         /* Print-specific styles to ensure it looks like a clean document */
         @media print {
