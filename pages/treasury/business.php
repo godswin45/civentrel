@@ -458,9 +458,9 @@ include __DIR__ . '/../../includes/sidebar.php';
                      </div>
                   </div>
                 <?php elseif ($reviewApp['status'] === 'assessed'): ?>
-                  <button type="button" onclick="window.open('print-assessment.php?id=<?= $reviewApp['id'] ?>', 'Print', 'width=900,height=800')" class="py-2 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold rounded-lg text-xs transition flex items-center justify-center gap-2">
+                  <a href="print-assessment.php?id=<?= $reviewApp['id'] ?>" target="_blank" class="py-2 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold rounded-lg text-xs transition flex items-center justify-center gap-2 w-full">
                     <i class="fa-solid fa-print"></i> Print Order of Payment (Total: ₱<?= number_format($reviewApp['total_due'] ?? 0, 2) ?>)
-                  </button>
+                  </a>
                 <?php endif; ?>
 
                 <button type="submit" class="py-2.5 px-4 bg-brand-medium hover:opacity-90 text-white font-bold rounded-lg text-xs transition w-full">
