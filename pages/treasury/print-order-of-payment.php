@@ -58,7 +58,7 @@ if (!$app) {
         }
     </script>
 </head>
-<body onload="window.print()">
+<body>
     
     <div class="text-center mb-6 no-print">
         <button onclick="window.print()" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700">
