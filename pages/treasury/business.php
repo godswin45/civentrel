@@ -14,6 +14,11 @@ $successMsg = null;
 $activeTab = $_GET['tab'] ?? 'new';
 if (!in_array($activeTab, ['new', 'renewal', 'retirement'], true)) $activeTab = 'new';
 
+try {
+    $db = \App\Core\Database::getInstance();
+    $db->query("ALTER TABLE tr_business_apps MODIFY COLUMN transaction_type ENUM('new', 'renewal', 'retirement') NOT NULL");
+} catch (\Throwable $e) {}
+
 $editingApp = null;
 if (isset($_GET['edit'])) {
     $editingApp = $treasuryService->getBusinessApp($_GET['edit']);
