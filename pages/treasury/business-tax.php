@@ -151,9 +151,18 @@ include __DIR__ . '/../../includes/sidebar.php';
         </form>
 
         <div class="lg:col-span-3 bg-white border border-slate-200/80 rounded-2xl shadow-xs p-5">
-          <h2 class="text-sm font-extrabold text-slate-800 pb-3 border-b border-slate-100 mb-4">Official Receipt</h2>
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <h2 class="text-sm font-extrabold text-slate-800">Official Receipt</h2>
+            <?php if ($lastReceipt): ?>
+            <button type="button" onclick="window.print()"
+              class="no-print inline-flex items-center gap-2 bg-brand-dark hover:opacity-90 text-white font-bold px-3 py-2 rounded-lg text-xs transition shadow-sm">
+              <i class="fa-solid fa-print"></i> Print Receipt
+            </button>
+            <?php endif; ?>
+          </div>
           <?php if ($lastReceipt): ?>
-            <div class="border-2 border-brand-border rounded-2xl p-8 bg-gradient-to-b from-brand-light/80 to-white relative w-full">
+            <div id="or-print-area" class="border-2 border-brand-border rounded-2xl p-8 bg-gradient-to-b from-brand-light/80 to-white relative w-full">
+
               <div class="flex justify-between items-start border-b-2 border-dashed border-brand-border pb-4 mb-4">
                 <div>
                   <div class="text-lg font-black text-brand-dark">Official Receipt</div>
@@ -182,11 +191,41 @@ include __DIR__ . '/../../includes/sidebar.php';
           <?php endif; ?>
         </div>
       </div>
-      <!-- Transaction History -->
+      <!-- Transaction History (hidden during print) -->
+      <div class="no-print">
       <?php 
       $module = 'business_tax';
       $limit = 5;
       include __DIR__ . '/../../includes/transaction_history.php';
       ?>
+      </div>
     </main>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
+<style>
+  .or-print-only { display: none; }
+  @media print {
+    header, aside, nav, footer, form,
+    .no-print, .lg\:col-span-2,
+    .lg\:col-span-3 > div:first-child { display: none !important; }
+    body, html { background: #fff !important; margin: 0; padding: 0; }
+    main { padding: 8px !important; margin: 0 !important; display: block !important; }
+    .grid { display: block !important; }
+    .lg\:col-span-3 { width: 100% !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
+    #or-print-area {
+      width: 420px !important; max-width: 100% !important;
+      margin: 0 auto !important;
+      border: 1.5px solid #94a3b8 !important;
+      border-radius: 0 !important;
+      background: #fff !important;
+      padding: 28px !important;
+      box-shadow: none !important;
+      position: static !important;
+    }
+    #or-print-area * { color: #1e293b !important; }
+    #or-print-area .text-slate-400,
+    #or-print-area .text-slate-500 { color: #64748b !important; }
+    #or-print-area .text-brand-dark { color: #1e40af !important; }
+    .or-print-only { display: block !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
