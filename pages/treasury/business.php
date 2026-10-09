@@ -11,8 +11,8 @@ $pageTitle = 'Business Permit Transactions';
 $activePage = 'treasury-business';
 $errorMsg = null;
 $successMsg = null;
-$activeTab = $_GET['tab'] ?? 'renewal';
-if (!in_array($activeTab, ['renewal', 'retirement'], true)) $activeTab = 'renewal';
+$activeTab = $_GET['tab'] ?? 'new';
+if (!in_array($activeTab, ['new', 'renewal', 'retirement'], true)) $activeTab = 'new';
 
 $editingApp = null;
 if (isset($_GET['edit'])) {
@@ -27,7 +27,7 @@ if (isset($_GET['edit'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (($_POST['action'] ?? '') === 'submit_application') {
-            $type = $_POST['transaction_type'] === 'retirement' ? 'retirement' : 'renewal';
+            $type = in_array($_POST['transaction_type'] ?? '', ['new', 'renewal', 'retirement']) ? $_POST['transaction_type'] : 'new';
             foreach (['business_name', 'owner_name'] as $required) {
                 if (trim($_POST[$required] ?? '') === '') throw new Exception('Please complete all required fields.');
             }
@@ -153,16 +153,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if (isset($_GET['ok']) && isset($_GET['msg'])) $successMsg = $_GET['msg'];
 
 try {
+    $newApps = $treasuryService->listBusinessApps('new');
     $renewals = $treasuryService->listBusinessApps('renewal');
     $retirements = $treasuryService->listBusinessApps('retirement');
     $auditService = $auditService ?? null;
 } catch (Exception $e) {
     $errorMsg = $errorMsg ?? $e->getMessage();
-    $renewals = []; $retirements = [];
+    $newApps = []; $renewals = []; $retirements = [];
     $auditService = null;
 }
 
-$checklists = ['renewal' => $treasuryService->getBusinessChecklist('renewal'), 'retirement' => $treasuryService->getBusinessChecklist('retirement')];
+$checklists = ['new' => $treasuryService->getBusinessChecklist('new'), 'renewal' => $treasuryService->getBusinessChecklist('renewal'), 'retirement' => $treasuryService->getBusinessChecklist('retirement')];
 $statusColor = ['submitted' => 'bg-sky-50 text-sky-600', 'assessed' => 'bg-amber-50 text-amber-600', 'paid' => 'bg-emerald-50 text-emerald-600', 'issued' => 'bg-emerald-50 text-emerald-600'];
 $reviewApp = $editingApp;
 $reviewChecklist = $reviewApp ? ($checklists[$reviewApp['transaction_type']] ?? []) : [];
@@ -198,7 +199,7 @@ include __DIR__ . '/../../includes/sidebar.php';
             Business Permit Transactions
           </h1>
           <p class="text-xs text-slate-500 max-w-2xl leading-relaxed">
-            Renewal and Retirement of Business (closure / resignation), per the Citizen's Charter — Business Permits and Licensing Office &amp; City Treasury Department.
+            New Business Registration, Renewal, and Retirement of Business (closure / resignation), per the Citizen's Charter — Business Permits and Licensing Office &amp; City Treasury Department.
           </p>
         </div>
       </div>
@@ -217,8 +218,9 @@ include __DIR__ . '/../../includes/sidebar.php';
       <!-- Tabs -->
       <div class="border-b border-slate-200">
         <nav class="flex space-x-8">
+          <a href="?tab=new" class="<?= $activeTab === 'new' ? 'border-brand-medium text-brand-dark' : 'border-transparent text-slate-500 hover:text-slate-700' ?> border-b-2 pb-3 text-xs font-bold uppercase tracking-wider transition">New</a>
           <a href="?tab=renewal" class="<?= $activeTab === 'renewal' ? 'border-brand-medium text-brand-dark' : 'border-transparent text-slate-500 hover:text-slate-700' ?> border-b-2 pb-3 text-xs font-bold uppercase tracking-wider transition">Renewal</a>
-          <a href="?tab=retirement" class="<?= $activeTab === 'retirement' ? 'border-brand-medium text-brand-dark' : 'border-transparent text-slate-500 hover:text-slate-700' ?> border-b-2 pb-3 text-xs font-bold uppercase tracking-wider transition">Retirement of Business (Closure / Resignation)</a>
+          <a href="?tab=retirement" class="<?= $activeTab === 'retirement' ? 'border-brand-medium text-brand-dark' : 'border-transparent text-slate-500 hover:text-slate-700' ?> border-b-2 pb-3 text-xs font-bold uppercase tracking-wider transition">Retirement of Business</a>
         </nav>
       </div>
 
@@ -228,7 +230,11 @@ include __DIR__ . '/../../includes/sidebar.php';
           <input type="hidden" name="action" value="submit_application">
           <input type="hidden" name="transaction_type" value="<?= $activeTab ?>">
           <h2 class="text-sm font-extrabold text-slate-800 pb-1">
-            <?= $activeTab === 'renewal' ? 'Business Renewal Application' : 'Business Retirement Application' ?>
+            <?php 
+              if ($activeTab === 'new') echo 'New Business Application';
+              elseif ($activeTab === 'renewal') echo 'Business Renewal Application';
+              else echo 'Business Retirement Application';
+            ?>
           </h2>
 
           <div class="space-y-1.5">
@@ -285,9 +291,13 @@ include __DIR__ . '/../../includes/sidebar.php';
         <div class="lg:col-span-3 bg-white border border-slate-200/80 rounded-2xl shadow-xs">
           <div class="p-5 border-b border-slate-100">
             <h2 class="text-sm font-extrabold text-slate-800">
-              <?= $activeTab === 'renewal' ? 'Renewal Applications' : 'Retirement Applications' ?>
+              <?php 
+                if ($activeTab === 'new') echo 'New Applications';
+                elseif ($activeTab === 'renewal') echo 'Renewal Applications';
+                else echo 'Retirement Applications';
+              ?>
             </h2>
-            <span class="text-[11px] text-slate-400"><?= count($activeTab === 'renewal' ? $renewals : $retirements) ?> applications</span>
+            <span class="text-[11px] text-slate-400"><?= count($activeTab === 'new' ? $newApps : ($activeTab === 'renewal' ? $renewals : $retirements)) ?> applications</span>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-xs">
@@ -301,7 +311,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
-                <?php foreach ($activeTab === 'renewal' ? $renewals : $retirements as $app): ?>
+                <?php foreach ($activeTab === 'new' ? $newApps : ($activeTab === 'renewal' ? $renewals : $retirements) as $app): ?>
                 <tr class="hover:bg-brand-light/40 transition">
                   <td class="px-5 py-3 font-mono text-slate-500"><?= htmlspecialchars($app['application_no']) ?></td>
                   <td class="px-5 py-3 font-semibold text-slate-700"><?= htmlspecialchars($app['business_name']) ?></td>

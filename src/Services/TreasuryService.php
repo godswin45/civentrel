@@ -371,6 +371,16 @@ class TreasuryService {
      * Get business checklist
      */
     public function getBusinessChecklist(string $type): array {
+        if ($type === 'new') {
+            return [
+                'brgy_clear'   => 'Barangay Clearance (current year)',
+                'dti_sec'      => 'DTI/SEC/CDA Registration',
+                'contract'     => 'Contract of Lease / Transfer of Certificate of Title (TCT)',
+                'locational'   => 'Locational Clearance',
+                'fire_cert'    => 'Fire Safety Inspection Certificate',
+                'owner_id'     => "Owner's government-issued ID",
+            ];
+        }
         if ($type === 'renewal') {
             return [
                 'prev_permit'  => "Copy of Business/Mayor's Permit (preceding year)",
