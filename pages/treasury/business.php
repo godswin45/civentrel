@@ -17,7 +17,9 @@ if (!in_array($activeTab, ['new', 'renewal', 'retirement'], true)) $activeTab = 
 try {
     $db = \App\Core\Database::getInstance();
     $db->query("ALTER TABLE tr_business_apps MODIFY COLUMN transaction_type ENUM('new', 'renewal', 'retirement') NOT NULL");
-} catch (\Throwable $e) {}
+} catch (\Throwable $e) {
+    die("DB ALTER ERROR: " . $e->getMessage());
+}
 
 $editingApp = null;
 if (isset($_GET['edit'])) {
