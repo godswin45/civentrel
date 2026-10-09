@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $auditService->logTransaction([
                 'user_id' => $_SESSION['user_id'] ?? null,
                 'username' => $headerUser['full_name'] ?? 'System',
-                'module' => 'collection',
+                'module' => 'business_tax',
                 'action' => 'collect',
                 'table_name' => 'tr_collections',
                 'record_id' => $lastReceipt['id'] ?? null,
