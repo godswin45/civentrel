@@ -319,7 +319,7 @@ try {
 
     // ---- Business Permit Applications (module business) ----
     $apps = [
-        ['Santos Rice Trading', 'Ricardo Santos', 'Purok 2, Brgy. Poblacion', 'renewal', 'renewal', 850000, 0, 'issued'],
+        ['Santos Rice Trading', 'Ricardo Santos', 'Purok 2, Brgy. Poblacion', 'renewal', 'renewal', 850000, 0, 'issued', 'Brgy. Poblacion', 'Retail', 'BP-2025-00123'],
         ['Bayanihan Pharmacy', 'Liza Bayani', 'Rizal St., Brgy. San Jose', 'renewal', 'renewal', 1200000, 0, 'paid'],
         ['StarBright Laundry Shop', 'Mark Estrada', 'Mabini St., Brgy. Sto. Nino', 'new', 'renewal', 0, 320000, 'assessed'],
         ['Cruz Lechon House', 'Benjie Cruz', 'National Hwy, Brgy. Bagong Silang', 'renewal', 'renewal', 0, 640000, 'submitted'],
