@@ -1,9 +1,9 @@
 <?php
 require_once __DIR__ . '/../../src/bootstrap.php';
 try {
-    $db = \App\Core\Database::getInstance();
-    $db->query("ALTER TABLE tr_business_apps MODIFY COLUMN transaction_type ENUM('new', 'renewal', 'retirement') NOT NULL");
-    echo "SUCCESS: altered tr_business_apps\n";
+    $db = Database::getInstance();
+    $cols = $db->query("SHOW COLUMNS FROM tr_business_apps")->fetchAll();
+    echo "<pre>"; print_r($cols); echo "</pre>";
 } catch (\Throwable $e) {
-    echo "ERROR: " . $e->getMessage() . "\n";
+    echo "ERROR: " . $e->getMessage();
 }
