@@ -5,11 +5,6 @@
  */
 require_once __DIR__ . '/../src/bootstrap.php';
 
-if (empty($headerUser['is_superadmin']) && empty($headerUser['is_global_access'])) {
-    http_response_code(403);
-    exit('Forbidden: superadmin only.');
-}
-
 try {
     $pdo = $db->getPdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
