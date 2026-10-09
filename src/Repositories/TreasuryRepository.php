@@ -154,9 +154,17 @@ class TreasuryRepository {
     /**
      * Update voucher status
      */
-    public function updateVoucherStatus(int $id, string $status): bool {
+    public function updateVoucherStatus(int $id, string $status, array $extra = []): bool {
+        // Ensure rejection_reason column exists
+        try {
+            $cols = $this->getTableColumns('tr_disbursements');
+            if (!in_array('rejection_reason', $cols)) {
+                $this->db->getPdo()->exec("ALTER TABLE tr_disbursements ADD COLUMN rejection_reason TEXT NULL");
+            }
+        } catch (\Throwable $e) {}
+
         $normalizedStatus = strtolower(trim($status));
-        $data = ['status' => $normalizedStatus];
+        $data = array_merge(['status' => $normalizedStatus], $extra);
         if ($normalizedStatus === 'disbursed') {
             $data['disbursement_date'] = date('Y-m-d');
         }

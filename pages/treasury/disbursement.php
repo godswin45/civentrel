@@ -90,7 +90,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 error_log('AI anomaly check failed: ' . $aiEx->getMessage());
             }
 
-            $successMsg = 'Voucher submitted for release.';
+            $successMsg = 'Voucher submitted.';
+
+        } elseif (($_POST['action'] ?? '') === 'approve_voucher') {
+            $treasuryService->updateVoucherStatus((int) $_POST['voucher_id'], 'approved');
+            if ($auditService) {
+                $auditService->logTransaction([
+                    'user_id'    => $_SESSION['user_id'] ?? null,
+                    'username'   => $headerUser['full_name'] ?? 'System',
+                    'module'     => 'disbursement',
+                    'action'     => 'approve',
+                    'table_name' => 'tr_disbursements',
+                    'record_id'  => $_POST['voucher_id'],
+                    'new_values' => json_encode(['status' => 'approved'])
+                ]);
+            }
+            $successMsg = 'Voucher approved. Ready for fund release.';
+
+        } elseif (($_POST['action'] ?? '') === 'reject_voucher') {
+            $reason = trim($_POST['rejection_reason'] ?? '');
+            if ($reason === '') throw new Exception('Please provide a rejection reason.');
+            // Store rejection reason in purpose column with prefix, or use extra column
+            $treasuryService->updateVoucherStatus((int) $_POST['voucher_id'], 'rejected', [
+                'rejection_reason' => $reason,
+            ]);
+            if ($auditService) {
+                $auditService->logTransaction([
+                    'user_id'    => $_SESSION['user_id'] ?? null,
+                    'username'   => $headerUser['full_name'] ?? 'System',
+                    'module'     => 'disbursement',
+                    'action'     => 'reject',
+                    'table_name' => 'tr_disbursements',
+                    'record_id'  => $_POST['voucher_id'],
+                    'new_values' => json_encode(['status' => 'rejected', 'reason' => $reason])
+                ]);
+            }
+            $successMsg = 'Voucher rejected.';
 
         } elseif (($_POST['action'] ?? '') === 'release_voucher') {
             $treasuryService->releaseVoucher($_POST['voucher_id']);
@@ -261,24 +296,55 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars(strtoupper($v['fund_code'] ?? ($v['fund_id'] ?? ''))) ?></td>
                 <td class="px-5 py-3 text-right font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($v['amount']) ?></td>
                 <td class="px-5 py-3">
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= strtolower($v['status'])==='pending' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600' ?>"><?= htmlspecialchars($v['status']) ?></span>
+                  <?php
+                    $vstatus = strtolower($v['status']);
+                    $badgeClass = match($vstatus) {
+                      'pending'   => 'bg-amber-50 text-amber-600',
+                      'approved'  => 'bg-blue-50 text-blue-600',
+                      'disbursed' => 'bg-emerald-50 text-emerald-600',
+                      'rejected'  => 'bg-red-50 text-red-600',
+                      default     => 'bg-slate-100 text-slate-500',
+                    };
+                  ?>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= $badgeClass ?>"><?= htmlspecialchars($v['status']) ?></span>
+                  <?php if ($vstatus === 'rejected' && !empty($v['rejection_reason'])): ?>
+                  <p class="text-[10px] text-red-400 mt-1 max-w-[140px] leading-tight" title="<?= htmlspecialchars($v['rejection_reason']) ?>"><?= htmlspecialchars(mb_strimwidth($v['rejection_reason'], 0, 40, '…')) ?></p>
+                  <?php endif; ?>
                 </td>
                 <td class="px-5 py-3 text-right">
-                  <?php if (strtolower($v['status']) === 'pending'): ?>
                   <?php
+                    $vstatus = strtolower($v['status']);
+                    $vId = (int) $v['id'];
                     $confirmPayee = htmlspecialchars((string) ($v['payee'] ?? ''), ENT_QUOTES);
                     $confirmAmt   = htmlspecialchars($treasuryService->formatPeso($v['amount']), ENT_QUOTES);
                     $confirmFund  = htmlspecialchars(strtoupper($v['fund_code'] ?? ($v['fund_id'] ?? '')), ENT_QUOTES);
                   ?>
-                  <form method="post" class="inline"
-                        data-confirm="Release <?= $confirmAmt ?> to <?= $confirmPayee ?>?&#10;&#10;This will deduct the amount from the <?= $confirmFund ?> fund balance and cannot be undone."
-                        data-confirm-title="Confirm voucher release" data-confirm-ok="Confirm release" data-confirm-variant="danger">
-                    <input type="hidden" name="action" value="release_voucher">
-                    <input type="hidden" name="voucher_id" value="<?= (int) $v['id'] ?>">
-                    <button type="submit" class="text-[11px] font-bold text-brand-dark hover:underline">Release</button>
-                  </form>
-                  <?php else: ?>
+                  <?php if ($vstatus === 'pending'): ?>
+                  <div class="flex items-center justify-end gap-3">
+                    <form method="post" class="inline"
+                          data-confirm="Approve voucher <?= $confirmAmt ?> for <?= $confirmPayee ?>?"
+                          data-confirm-title="Approve Voucher" data-confirm-ok="Yes, approve" data-confirm-variant="success">
+                      <input type="hidden" name="action" value="approve_voucher">
+                      <input type="hidden" name="voucher_id" value="<?= $vId ?>">
+                      <button type="submit" class="text-[11px] font-bold text-emerald-600 hover:underline"><i class="fa-solid fa-check mr-1"></i>Approve</button>
+                    </form>
+                    <button type="button" onclick="openRejectModal(<?= $vId ?>)" class="text-[11px] font-bold text-red-500 hover:underline"><i class="fa-solid fa-xmark mr-1"></i>Reject</button>
+                  </div>
+                  <?php elseif ($vstatus === 'approved'): ?>
+                  <div class="flex items-center justify-end gap-3">
+                    <form method="post" class="inline"
+                          data-confirm="Release <?= $confirmAmt ?> to <?= $confirmPayee ?>?&#10;&#10;This will deduct the amount from the <?= $confirmFund ?> fund balance and cannot be undone."
+                          data-confirm-title="Release Funds" data-confirm-ok="Confirm release" data-confirm-variant="danger">
+                      <input type="hidden" name="action" value="release_voucher">
+                      <input type="hidden" name="voucher_id" value="<?= $vId ?>">
+                      <button type="submit" class="text-[11px] font-bold text-brand-dark hover:underline"><i class="fa-solid fa-paper-plane mr-1"></i>Release</button>
+                    </form>
+                    <button type="button" onclick="openRejectModal(<?= $vId ?>)" class="text-[11px] font-bold text-red-500 hover:underline"><i class="fa-solid fa-xmark mr-1"></i>Reject</button>
+                  </div>
+                  <?php elseif ($vstatus === 'disbursed'): ?>
                   <span class="text-[10px] text-slate-400"><?= $v['disbursement_date'] ? date('M j, Y', strtotime($v['disbursement_date'])) : '-' ?></span>
+                  <?php elseif ($vstatus === 'rejected'): ?>
+                  <span class="text-[10px] text-red-400 font-semibold">Rejected</span>
                   <?php endif; ?>
                 </td>
               </tr>
@@ -298,5 +364,47 @@ include __DIR__ . '/../../includes/sidebar.php';
       ?>
     </main>
 
+    <!-- Reject Voucher Modal -->
+    <div id="rejectModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <p class="text-[10px] font-extrabold uppercase tracking-widest text-red-400">Action Required</p>
+            <h3 class="mt-1 text-lg font-black text-slate-900">Reject Voucher</h3>
+          </div>
+          <button type="button" onclick="closeRejectModal()" class="text-slate-400 hover:text-slate-700">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <p class="text-sm text-slate-500 mb-4">Provide a reason for rejection. This will be recorded in the system.</p>
+        <form method="post" id="rejectForm">
+          <input type="hidden" name="action" value="reject_voucher">
+          <input type="hidden" name="voucher_id" id="rejectVoucherId">
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-slate-600 mb-1.5">Rejection reason <span class="text-red-500">*</span></label>
+            <textarea name="rejection_reason" id="rejectionReason" rows="3" required
+              placeholder="e.g. Insufficient supporting documents, duplicate request, budget exceeded..."
+              class="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100 resize-none"></textarea>
+          </div>
+          <div class="flex justify-end gap-2">
+            <button type="button" onclick="closeRejectModal()" class="rounded-lg bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200">Cancel</button>
+            <button type="submit" class="rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700">Confirm Rejection</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+      function openRejectModal(voucherId) {
+        document.getElementById('rejectVoucherId').value = voucherId;
+        document.getElementById('rejectionReason').value = '';
+        const m = document.getElementById('rejectModal');
+        m.classList.remove('hidden'); m.classList.add('flex');
+        document.getElementById('rejectionReason').focus();
+      }
+      function closeRejectModal() {
+        const m = document.getElementById('rejectModal');
+        m.classList.add('hidden'); m.classList.remove('flex');
+      }
+    </script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
