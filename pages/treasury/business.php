@@ -458,7 +458,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                      </div>
                   </div>
                 <?php elseif ($reviewApp['status'] === 'assessed'): ?>
-                  <a href="print-order-of-payment.php?id=<?= $reviewApp['id'] ?>" target="_blank" class="py-2 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold rounded-lg text-xs transition flex items-center justify-center gap-2">
+                  <a href="print-assessment.php?id=<?= $reviewApp['id'] ?>" target="_blank" class="py-2 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold rounded-lg text-xs transition flex items-center justify-center gap-2">
                     <i class="fa-solid fa-print"></i> Print Order of Payment (Total: ₱<?= number_format($reviewApp['total_due'] ?? 0, 2) ?>)
                   </a>
                 <?php endif; ?>
