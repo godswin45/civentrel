@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (($_POST['action'] ?? '') === 'advance_status') {
             $app = $treasuryService->getBusinessApp($_POST['app_id']);
             if (!$app) throw new Exception('Application not found.');
-            $next = ['Submitted' => 'For Payment', 'For Payment' => 'Released'][$app['status']] ?? $app['status'];
+            $next = ['submitted' => 'assessed', 'assessed' => 'paid', 'paid' => 'issued'][$app['status']] ?? $app['status'];
             $treasuryService->setBusinessAppStatus($app['id'], $next);
             $successMsg = 'Application ' . $app['application_no'] . ' moved to "' . $next . '".';
             header('Location: business.php?tab=' . $app['transaction_type'] . '&edit=' . $app['id'] . '&ok=1&msg=' . urlencode($successMsg));
@@ -153,7 +153,7 @@ try {
 }
 
 $checklists = ['renewal' => $treasuryService->getBusinessChecklist('renewal'), 'retirement' => $treasuryService->getBusinessChecklist('retirement')];
-$statusColor = ['Submitted' => 'bg-sky-50 text-sky-600', 'For Payment' => 'bg-amber-50 text-amber-600', 'Paid' => 'bg-emerald-50 text-emerald-600', 'Released' => 'bg-emerald-50 text-emerald-600'];
+$statusColor = ['submitted' => 'bg-sky-50 text-sky-600', 'assessed' => 'bg-amber-50 text-amber-600', 'paid' => 'bg-emerald-50 text-emerald-600', 'issued' => 'bg-emerald-50 text-emerald-600'];
 $reviewApp = $editingApp;
 $reviewChecklist = $reviewApp ? ($checklists[$reviewApp['transaction_type']] ?? []) : [];
 $reviewDocuments = [];
@@ -166,7 +166,7 @@ if ($reviewApp) {
 }
 $nextStatusLabel = null;
 if ($reviewApp) {
-    $nextStatusLabel = ['Submitted' => 'For Payment', 'For Payment' => 'Released'][$reviewApp['status']] ?? null;
+    $nextStatusLabel = ['submitted' => 'assessed', 'assessed' => 'paid', 'paid' => 'issued'][$reviewApp['status']] ?? null;
 }
 
 $basePath = '../../';
@@ -297,7 +297,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                   <td class="px-5 py-3 font-semibold text-slate-700"><?= htmlspecialchars($app['business_name']) ?></td>
                   <td class="px-5 py-3 text-slate-500"><?= htmlspecialchars($app['owner_name']) ?></td>
                   <td class="px-5 py-3">
-                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= $statusColor[$app['status']] ?? 'bg-slate-50 text-slate-600' ?>"><?= htmlspecialchars($app['status']) ?></span>
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= $statusColor[$app['status']] ?? 'bg-slate-50 text-slate-600' ?>"><?= ucwords(htmlspecialchars($app['status'])) ?></span>
                   </td>
                   <td class="px-5 py-3 text-right">
                     <a href="?tab=<?= $activeTab ?>&edit=<?= $app['id'] ?>" class="text-[11px] font-bold text-brand-dark hover:underline">Review</a>
@@ -321,7 +321,7 @@ include __DIR__ . '/../../includes/sidebar.php';
               <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application Review</p>
               <h3 class="text-lg font-black text-slate-900 mt-1"><?= htmlspecialchars($reviewApp['application_no']) ?></h3>
               <div class="flex flex-wrap items-center gap-2 mt-2">
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= $statusColor[$reviewApp['status']] ?? 'bg-slate-50 text-slate-600' ?>"><?= htmlspecialchars($reviewApp['status']) ?></span>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= $statusColor[$reviewApp['status']] ?? 'bg-slate-50 text-slate-600' ?>"><?= ucwords(htmlspecialchars($reviewApp['status'])) ?></span>
                 <span class="text-[11px] text-slate-500 capitalize"><?= htmlspecialchars($reviewApp['transaction_type']) ?></span>
               </div>
             </div>
@@ -439,7 +439,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <input type="hidden" name="action" value="advance_status">
                 <input type="hidden" name="app_id" value="<?= (int) $reviewApp['id'] ?>">
                 <button type="submit" class="py-2.5 px-4 bg-brand-medium hover:opacity-90 text-white font-bold rounded-lg text-xs transition">
-                  Move to <?= htmlspecialchars($nextStatusLabel) ?>
+                  Move to <?= ucwords(htmlspecialchars($nextStatusLabel)) ?>
                 </button>
               </form>
               <?php endif; ?>
