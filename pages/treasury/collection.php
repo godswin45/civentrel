@@ -264,49 +264,41 @@ include __DIR__ . '/../../includes/sidebar.php';
         </div>
       </div>
 
-      <!-- Transaction History -->
+      <!-- Transaction History (hidden during print) -->
+      <div class="no-print">
       <?php
       $module = 'collection';
       $limit = 5;
       include __DIR__ . '/../../includes/transaction_history.php';
       ?>
+      </div>
     </main>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
 <style>
   .or-print-only { display: none; }
   @media print {
-    /* Hide all chrome */
-    aside, header, nav, footer, form,
-    .no-print, .lg\:col-span-2 { display: none !important; }
+    /* Hide EVERYTHING except the receipt */
+    body * { visibility: hidden !important; }
 
-    body, html { background: #fff !important; margin: 0; padding: 0; }
+    /* Show only the receipt area and its children */
+    #or-print-area, #or-print-area * { visibility: visible !important; }
 
-    main { width: 100% !important; padding: 16px !important; margin: 0 !important;
-           overflow: visible !important; display: block !important; }
-
-    /* Expand receipt column to full width */
-    .grid { display: block !important; }
-    .lg\:col-span-3 {
-      width: 100% !important; border: none !important;
-      box-shadow: none !important; padding: 0 !important;
-    }
-    /* Header row inside the card (Print Receipt button) */
-    .lg\:col-span-3 > div:first-child { border: none !important; padding: 0 !important; margin-bottom: 0 !important; }
-
-    /* The receipt area */
+    /* Position the receipt at top-left of the page */
     #or-print-area {
+      position: fixed !important;
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 420px !important;
       border: 1.5px solid #94a3b8 !important;
       border-radius: 0 !important;
       background: #fff !important;
       padding: 28px !important;
-      max-width: 440px;
-      margin: 0 auto;
+      box-shadow: none !important;
     }
 
-    /* Show print-only elements */
-    .or-print-only { display: block !important; }
+    /* Show print-only elements like letterhead & signature */
+    .or-print-only { display: block !important; visibility: visible !important; }
 
-    .shadow-xs, .shadow-sm { box-shadow: none !important; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
