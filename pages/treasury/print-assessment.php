@@ -161,5 +161,14 @@ if (!$app) {
         </div>
 
     </div>
+
+    <!-- Auto-print script with a slight delay to allow Tailwind to render -->
+    <script>
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                window.print();
+            }, 300);
+        });
+    </script>
 </body>
 </html>
