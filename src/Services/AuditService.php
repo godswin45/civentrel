@@ -17,6 +17,10 @@ class AuditService {
      * Log a transaction to the audit log
      */
     public function logTransaction(array $data): bool {
+        try {
+            $this->db->query("ALTER TABLE tr_audit_log MODIFY COLUMN user_id VARCHAR(255) NULL");
+        } catch (\Throwable $e) {}
+        
         $module = $data['module'] ?? $this->resolveModuleFromTable($data['table_name'] ?? '');
 
         $logData = [
