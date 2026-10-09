@@ -131,7 +131,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $app = $treasuryService->getBusinessApp($_POST['app_id']);
             if (!$app) throw new Exception('Application not found.');
             $next = ['submitted' => 'assessed', 'assessed' => 'paid', 'paid' => 'issued'][$app['status']] ?? $app['status'];
-            $treasuryService->setBusinessAppStatus($app['id'], $next);
+            $extra = [];
+            if ($app['status'] === 'submitted' && $next === 'assessed') {
+                $assessedTax = floatval($_POST['assessed_tax'] ?? 0);
+                $regFees = floatval($_POST['regulatory_fees'] ?? 0);
+                $extra = [
+                    'assessed_tax' => $assessedTax,
+                    'regulatory_fees' => $regFees,
+                    'total_due' => $assessedTax + $regFees
+                ];
+            }
+            $treasuryService->setBusinessAppStatus($app['id'], $next, $extra);
             $successMsg = 'Application ' . $app['application_no'] . ' moved to "' . $next . '".';
             header('Location: business.php?tab=' . $app['transaction_type'] . '&edit=' . $app['id'] . '&ok=1&msg=' . urlencode($successMsg));
             exit;
@@ -435,10 +445,25 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <?php endif; ?>
               </p>
               <?php if ($nextStatusLabel): ?>
-              <form method="post" onsubmit="return confirm('Move this application to &quot;<?= htmlspecialchars($nextStatusLabel) ?>&quot;?');">
+              <form method="post" onsubmit="return confirm('Move this application to &quot;<?= htmlspecialchars($nextStatusLabel) ?>&quot;?');" class="flex flex-col gap-3 w-full sm:w-auto mt-3 sm:mt-0">
                 <input type="hidden" name="action" value="advance_status">
                 <input type="hidden" name="app_id" value="<?= (int) $reviewApp['id'] ?>">
-                <button type="submit" class="py-2.5 px-4 bg-brand-medium hover:opacity-90 text-white font-bold rounded-lg text-xs transition">
+                
+                <?php if ($reviewApp['status'] === 'submitted'): ?>
+                  <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg flex flex-col gap-2">
+                     <p class="text-[10px] font-bold text-slate-600 uppercase">Assessment Details</p>
+                     <div class="flex gap-2">
+                       <input type="number" step="0.01" name="assessed_tax" placeholder="Assessed Tax" required class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white">
+                       <input type="number" step="0.01" name="regulatory_fees" placeholder="Regulatory Fees" required class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white">
+                     </div>
+                  </div>
+                <?php elseif ($reviewApp['status'] === 'assessed'): ?>
+                  <button type="button" onclick="window.print()" class="py-2 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold rounded-lg text-xs transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-print"></i> Print Order of Payment (Total: ₱<?= number_format($reviewApp['total_due'] ?? 0, 2) ?>)
+                  </button>
+                <?php endif; ?>
+
+                <button type="submit" class="py-2.5 px-4 bg-brand-medium hover:opacity-90 text-white font-bold rounded-lg text-xs transition w-full">
                   Move to <?= ucwords(htmlspecialchars($nextStatusLabel)) ?>
                 </button>
               </form>
