@@ -1,7 +1,15 @@
 <?php
 $basePath = '../../';
-include '../../includes/header.php';
-include '../../includes/sidebar.php';
+require_once __DIR__ . '/../../src/bootstrap.php';
+
+// Auth check
+if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
+    header('Location: ../../login.php');
+    exit;
+}
+
+include __DIR__ . '/../../includes/header.php';
+include __DIR__ . '/../../includes/sidebar.php';
 ?>
 <script>
   window.currentUserRoleId = <?php echo json_encode($_SESSION['current_user_details']['role_id'] ?? null); ?>;

@@ -13,7 +13,11 @@ function proxyRequest($url, $method = 'POST', $body = null, $sendCookie = true, 
         'Content-Type: application/json'
     ], $customHeaders);
     
-    $remoteSessId = $_SESSION['remote_phpsessid'] ?? $_COOKIE['remote_phpsessid'] ?? $_COOKIE['PHPSESSID'] ?? null;
+    $isCitizen = (strpos($url, '/api/citizen') !== false);
+    $remoteSessId = $isCitizen
+        ? ($_SESSION['remote_phpsessid_citizen'] ?? $_SESSION['remote_phpsessid'] ?? $_COOKIE['remote_phpsessid'] ?? $_COOKIE['PHPSESSID'] ?? null)
+        : ($_SESSION['remote_phpsessid'] ?? $_COOKIE['remote_phpsessid'] ?? $_COOKIE['PHPSESSID'] ?? null);
+
     if ($sendCookie && !empty($remoteSessId)) {
         $headers[] = 'Cookie: PHPSESSID=' . $remoteSessId;
     }
@@ -49,12 +53,17 @@ function proxyRequest($url, $method = 'POST', $body = null, $sendCookie = true, 
     $headerStr = substr($response, 0, $headerSize);
     $bodyStr = substr($response, $headerSize);
     
-    // Parse cookies from headers
+    // Parse cookies from headers (store citizen cookies separately so employee session is preserved)
     preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $headerStr, $matches);
     foreach ($matches[1] as $cookie) {
         $parts = explode('=', $cookie, 2);
-        if (count($parts) === 2 && trim($parts[0]) === 'PHPSESSID') {
-            $_SESSION['remote_phpsessid'] = trim($parts[1]);
+        if (count($parts) === 2 && strtoupper(trim($parts[0])) === 'PHPSESSID') {
+            $sessId = trim($parts[1]);
+            if ($isCitizen) {
+                $_SESSION['remote_phpsessid_citizen'] = $sessId;
+            } else {
+                $_SESSION['remote_phpsessid'] = $sessId;
+            }
         }
     }
     

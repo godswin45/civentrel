@@ -1,7 +1,15 @@
 <?php
 $basePath = '../../';
-include '../../includes/header.php';
-include '../../includes/sidebar.php';
+require_once __DIR__ . '/../../src/bootstrap.php';
+
+// Auth check
+if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
+    header('Location: ../../login.php');
+    exit;
+}
+
+include __DIR__ . '/../../includes/header.php';
+include __DIR__ . '/../../includes/sidebar.php';
 ?>
 
 <main class="flex-1 p-6 md:p-8 w-full space-y-6 overflow-y-auto relative pb-28 bg-[#F8FAFC]">

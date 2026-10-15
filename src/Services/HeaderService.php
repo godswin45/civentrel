@@ -37,6 +37,20 @@ class HeaderService
         $employeeId = $_SESSION['employee_id'] ?? null;
 
         $user = $this->userService->getCurrentUserDetails($userId, $employeeId);
+        if (!$user && !empty($_SESSION['current_user_details'])) {
+            $user = $_SESSION['current_user_details'];
+        }
+        if (!$user && (!empty($_SESSION['first_name']) || !empty($_SESSION['email']))) {
+            $user = [
+                'first_name' => $_SESSION['first_name'] ?? '',
+                'last_name' => $_SESSION['last_name'] ?? '',
+                'email' => $_SESSION['email'] ?? '',
+                'role_name' => $_SESSION['role_name'] ?? ($_SESSION['role'] ?? 'Staff'),
+                'role_prefix' => $_SESSION['role_prefix'] ?? 'STF',
+                'role_id' => $_SESSION['role_id'] ?? null,
+                'is_superadmin' => $_SESSION['is_superadmin'] ?? false,
+            ];
+        }
 
         if ($user) {
             $mid = !empty($user['middle_name']) ? $user['middle_name'] . ' ' : '';
@@ -127,6 +141,10 @@ class HeaderService
                             }
                         }
                     }
+                } elseif (!empty($_SESSION['user_granted_resources'])) {
+                    $grantedActions = $_SESSION['user_granted_actions'] ?? [];
+                    $grantedResources = $_SESSION['user_granted_resources'] ?? [];
+                    $userPermsMap = $_SESSION['user_permissions_map'] ?? [];
                 }
                 
                 $headerUser['granted_actions'] = array_values(array_unique($grantedActions));
@@ -153,9 +171,11 @@ class HeaderService
                 } catch (\Throwable $e) {}
                 
                 // Cache inside local session
-                $_SESSION['user_granted_actions'] = $headerUser['granted_actions'];
-                $_SESSION['user_granted_resources'] = $headerUser['granted_resources'];
-                $_SESSION['user_permissions_map'] = $userPermsMap;
+                if (!empty($headerUser['granted_resources']) || empty($_SESSION['user_granted_resources'])) {
+                    $_SESSION['user_granted_actions'] = $headerUser['granted_actions'];
+                    $_SESSION['user_granted_resources'] = $headerUser['granted_resources'];
+                    $_SESSION['user_permissions_map'] = $userPermsMap;
+                }
             }
         }
 

@@ -230,7 +230,7 @@
 
           <!-- Department Management -->
           <?php if ($canAccessDeptMgmt): ?>
-          <a href="<?php echo $basePath ?? '../'; ?>pages/departments.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'departments.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
+          <a href="<?php echo $basePath ?? '../'; ?>pages/department/departments.php" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs tracking-wide transition group cursor-pointer <?php echo $currentPage == 'departments.php' ? 'bg-white text-brand-dark border border-brand-border font-bold shadow-xs' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-dark border border-transparent font-semibold'; ?>">
             <i class="fa-solid fa-sitemap text-sm <?php echo $currentPage == 'departments.php' ? 'text-brand-medium' : 'text-slate-400'; ?> group-hover:text-brand-medium transition"></i>
             <span class="sidebar-text truncate">Department Management</span>
           </a>

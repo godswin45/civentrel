@@ -1,7 +1,15 @@
 <?php
+require_once __DIR__ . '/../../src/bootstrap.php';
+
+// Auth check
+if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
+    header('Location: ../../login.php');
+    exit;
+}
+
 $basePath = '../../';
-include '../../includes/header.php';
-include '../../includes/sidebar.php';
+include __DIR__ . '/../../includes/header.php';
+include __DIR__ . '/../../includes/sidebar.php';
 
 $canEdit = false;
 if (!empty($headerUser['is_superadmin']) || !empty($headerUser['is_global_access'])) {
