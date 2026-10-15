@@ -39,7 +39,26 @@ class SessionTimeout
             } elseif (preg_match('#^(/civentrel)/#', $scriptName, $m)) {
                 $appRoot = $m[1] . '/';
             }
-            header('Location: ' . $appRoot . 'pages/logout.php');
+
+            $logoutUrl = $appRoot . 'pages/logout.php';
+
+            $isApi = (strpos($_SERVER['REQUEST_URI'] ?? '', '/api/') !== false) ||
+                     (strpos($_SERVER['SCRIPT_NAME'] ?? '', '/api/') !== false) ||
+                     (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) ||
+                     (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
+
+            if ($isApi) {
+                http_response_code(401);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode([
+                    'status' => 'expired',
+                    'message' => 'Session timed out due to inactivity',
+                    'redirect' => $logoutUrl
+                ]);
+                exit;
+            }
+
+            header('Location: ' . $logoutUrl);
             exit;
         }
 
