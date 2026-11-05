@@ -500,29 +500,35 @@ class GeminiInquiryService
             }
 
             // 4. Multi-turn conversational memory: if current turn didn't explicitly repeat the code,
-            // check recent conversation history so follow-ups ("bakit may surcharge yan?", "paano ko babayaran?") know which record is active!
+            // ONLY check the most recent USER message in conversation history (NEVER assistant messages,
+            // because assistant replies contain example codes like BIZ-2026-001 / RPT-2026-001!).
             if (!$matchedRecord && !empty($history)) {
-                $recentHistoryText = '';
-                foreach (array_reverse(array_slice($history, -4)) as $turn) {
-                    $recentHistoryText .= ' ' . ($turn['content'] ?? $turn['text'] ?? '');
-                }
-                foreach ($assessments as $ass) {
-                    $assNo = (string) ($ass['assessment_no'] ?? '');
-                    if ($assNo !== '' && stripos($recentHistoryText, $assNo) !== false) {
-                        $matchedRef = $assNo;
-                        $matchedRecord = ['type' => 'tax_assessment', 'data' => $ass];
-                        $matchedFromHistory = true;
+                $lastUserText = '';
+                foreach (array_reverse($history) as $turn) {
+                    if (($turn['role'] ?? '') === 'user') {
+                        $lastUserText = (string) ($turn['content'] ?? $turn['text'] ?? '');
                         break;
                     }
                 }
-                if (!$matchedRecord) {
-                    foreach ($stalls as $st) {
-                        $stNo = (string) ($st['stall_number'] ?? '');
-                        if ($stNo !== '' && preg_match('/\b' . preg_quote($stNo, '/') . '\b/i', $recentHistoryText)) {
-                            $matchedRef = $stNo;
-                            $matchedRecord = ['type' => 'market_stall', 'data' => $st];
+                if ($lastUserText !== '') {
+                    foreach ($assessments as $ass) {
+                        $assNo = (string) ($ass['assessment_no'] ?? '');
+                        if ($assNo !== '' && stripos($lastUserText, $assNo) !== false) {
+                            $matchedRef = $assNo;
+                            $matchedRecord = ['type' => 'tax_assessment', 'data' => $ass];
                             $matchedFromHistory = true;
                             break;
+                        }
+                    }
+                    if (!$matchedRecord) {
+                        foreach ($stalls as $st) {
+                            $stNo = (string) ($st['stall_number'] ?? '');
+                            if ($stNo !== '' && preg_match('/\b' . preg_quote($stNo, '/') . '\b/i', $lastUserText)) {
+                                $matchedRef = $stNo;
+                                $matchedRecord = ['type' => 'market_stall', 'data' => $st];
+                                $matchedFromHistory = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -825,82 +831,7 @@ class GeminiInquiryService
             }
         }
 
-        // 5. Multi-turn Conversational Follow-Ups on Business Registration / Permits / RPT
-        // e.g. After asking how to register a business, user asks:
-        // "magkano ang babayaran?", "gaano katagal?", "saan po yan?", "ano yung DTI / step 1?", "pwede ba online?"
-        if ($hasHistory && $category === 'Business Tax & Permits') {
-            if (preg_match('/(magkano|how much|cost|fee|bayad|babayaran|presyo|rate)/i', $question)) {
-                if ($isTagalog) {
-                    return "Tungkol po sa **gastos at babayaran sa pag-register ng Business Name at Mayor's Permit**:\n\n"
-                        . "1. **DTI Business Name Registration Fee:**\n"
-                        . "   - **Barangay Scope:** ₱200 + ₱30 Documentary Stamp Tax (DST)\n"
-                        . "   - **City / Municipality Scope (Caloocan):** ₱500 + ₱30 DST\n"
-                        . "   - **Regional Scope:** ₱1,000 + ₱30 DST\n"
-                        . "   - **National Scope:** ₱2,000 + ₱30 DST\n"
-                        . "2. **Caloocan City Hall (Mayor's Permit & Treasury Fees):**\n"
-                        . "   - **Initial Business Tax:** Karaniwang **1/20 ng 1% (0.05%) ng inyong Paid-Up Capital / Puhunan** para sa bagong negosyo (o base sa Gross Sales kapag renewal).\n"
-                        . "   - **Regulatory Fees:** Mayor's Permit Fee, Sanitary Fee, Garbage Fee, Zoning Fee, at Fire Safety Inspection Fee (karaniwang nasa **₱1,500 hanggang ₱5,000+** depende sa laki at uri ng negosyo).\n\n"
-                        . "💬 *Magkano po ba ang tinatayang puhunan (capital) o anong klaseng negosyo ang itatayo ninyo para mabigyan ko kayo ng mas eksaktong estimate?*";
-                }
-                return "Regarding the **costs and fees for Business Name & Mayor's Permit registration**:\n\n"
-                    . "1. **DTI Business Name Registration Fee:**\n"
-                    . "   - **Barangay Scope:** ₱200 + ₱30 Documentary Stamp Tax (DST)\n"
-                    . "   - **City / Municipality Scope (Caloocan):** ₱500 + ₱30 DST\n"
-                    . "   - **Regional Scope:** ₱1,000 + ₱30 DST | **National:** ₱2,000 + ₱30 DST\n"
-                    . "2. **Caloocan City Treasury & BPLO Fees:**\n"
-                    . "   - **Initial Business Tax:** Based on your **Initial Capital Investment** (or Gross Sales for renewals).\n"
-                    . "   - **Regulatory Fees:** Mayor's Permit, Sanitary, Zoning, Garbage, and Fire Safety Inspection Fee (typically **₱1,500 to ₱5,000+** depending on business size and category).\n\n"
-                    . "💬 *What type of business or initial capital are you planning so I can give you a closer estimate?*";
-            }
-
-            if (preg_match('/(gaano katagal|how long|ilang araw|days|processing time|mabilis ba|kailan makukuha)/i', $question)) {
-                if ($isTagalog) {
-                    return "Tungkol po sa **tagal ng proseso (processing time)**:\n\n"
-                        . "- **DTI Business Name (Online sa `bnrs.dti.gov.ph`):** **15–30 minuto lamang** kapag nakabayad na via GCash/Maya, mada-download agad ang DTI Certificate.\n"
-                        . "- **Barangay Business Clearance:** **1 araw** (same-day release sa inyong Barangay Hall).\n"
-                        . "- **Caloocan BPLO at City Treasurer's Office (BOSS One-Stop Shop):** **1 hanggang 3 working days** basta kumpleto na ang mga dokumento at nabayaran na ang Tax Order of Payment.\n\n"
-                        . "💬 *May tanong pa po ba kayo tungkol sa mga requirements o kung saan magpapasa?*";
-                }
-                return "Here is the **estimated processing time** for your business registration:\n\n"
-                    . "- **DTI Business Name (`bnrs.dti.gov.ph`):** **15–30 minutes** online (instant certificate download after GCash/Maya payment).\n"
-                    . "- **Barangay Business Clearance:** **Same day (1 day)** at your Barangay Hall.\n"
-                    . "- **Caloocan BPLO & Treasury Assessment (One-Stop Shop):** **1 to 3 working days** once complete documents are submitted and paid.\n\n"
-                    . "💬 *Would you like to know where the BPLO and Treasury offices are located or ask about another step?*";
-            }
-
-            if (preg_match('/(saan|san|where|location|address|opisina|office|city hall|pupunta)/i', $question)) {
-                if ($isTagalog) {
-                    return "Narito po kung **saan kayo pupunta o mag-a-apply sa Caloocan City**:\n\n"
-                        . "- **Online (Step 1 - DTI):** Sa `https://bnrs.dti.gov.ph` (hindi na kailangang pumila para sa trade name).\n"
-                        . "- **South Caloocan City Hall (Main):** **8th Street cor. 8th Avenue, Grace Park East, Caloocan City** — narito ang **BPLO (Business Permits & Licensing Office)** at **City Treasurer's Office**.\n"
-                        . "- **North Caloocan City Hall:** **Zapote Street, Camarin, Caloocan City** (may satellite BPLO at Treasury Collection Windows din para sa mga taga-North Caloocan).\n"
-                        . "- **Oras ng Opisina:** Lunes hanggang Biyernes, **8:00 AM – 5:00 PM**.\n\n"
-                        . "💬 *Mas malapit po ba kayo sa North Caloocan o South Caloocan?*";
-                }
-                return "Here is **where to process your Business Permit & Treasury payments in Caloocan City**:\n\n"
-                    . "- **Step 1 Online (DTI):** `https://bnrs.dti.gov.ph`\n"
-                    . "- **South Caloocan City Hall (Main):** **8th Street cor. 8th Avenue, Grace Park East, Caloocan City** (BPLO & City Treasurer's Office).\n"
-                    . "- **North Caloocan City Hall:** **Zapote Street, Camarin, Caloocan City** (Satellite BPLO & Treasury Collection Windows).\n"
-                    . "- **Office Hours:** Monday to Friday, **8:00 AM – 5:00 PM**.\n\n"
-                    . "💬 *Do you have any other questions about the requirements or fees?*";
-            }
-
-            if (preg_match('/(sari-sari|karinderya|kainan|food|online shop|retail|tindahan|puhunan|capital)/i', $question)) {
-                if ($isTagalog) {
-                    return "Magandang ideya po yan! Para sa **Sari-Sari Store / Tindahan / Food Business / Small Enterprise** sa Caloocan:\n\n"
-                        . "- Kung ang puhunan ay maliit, piliin lamang ang **Barangay Scope (₱230)** o **City Scope (₱530)** sa DTI.\n"
-                        . "- Kung **pagkain o tindahan** ang negosyo, kailangan din po ng **Health Certificate / Sanitary Permit** mula sa City Health Department bukod sa Barangay Clearance at Cedula.\n"
-                        . "- Kung ang kabuuang asset ay hindi lalagpas sa ₱3 Milyon, maaari rin kayong mag-apply bilang **BMBE (Barangay Micro Business Enterprise)** para sa dagdag na benepisyo.\n\n"
-                        . "💬 *May napili na po ba kayong pangalan ng negosyo o may tanong pa kayo sa Sanitary/Barangay requirements?*";
-                }
-                return "That's a great business choice! For a **Retail Store, Food Business, or Small Enterprise** in Caloocan City:\n\n"
-                    . "- For DTI registration, you only need **Barangay Scope (₱230)** or **City Scope (₱530)**.\n"
-                    . "- If you are handling food or beverages, you will also need a **Sanitary Permit & Health Card** from the Caloocan City Health Department alongside your Barangay Clearance and Cedula.\n\n"
-                    . "💬 *Do you have any other questions about getting your permits or tax assessment?*";
-            }
-        }
-
-        // 6. Intent-aware responses for New Business Registration vs Renewal vs Retirement
+        // 5. Intent-aware responses for New Business Registration vs Renewal vs Retirement (Check BEFORE generic follow-ups)
         if (preg_match('/(bago|bagong|new|register|rehistro|magparehistro|business name|pangalan ng negosyo|dti|sec|start|open|magtayo|apply)/i', $question) && preg_match('/(business|negosyo|permit|name|dti|mayor)/i', $question)) {
             if ($isTagalog) {
                 return "### Paano Mag-register ng Bagong Business Name at Mayor's Permit sa Caloocan City\n\n"
@@ -916,7 +847,7 @@ class GeminiInquiryService
                     . "  - Kwentahin ng **City Treasurer's Office** ang inyong **Initial Business Tax** (base sa Capital Investment) at **Regulatory Fees**.\n"
                     . "- **Hakbang 4: Pagbabayad at Pagkuha ng Official Receipt (OR)**\n"
                     . "  - Magbayad sa **Treasury Collection Counter** o **Online (GCash / Maya)** upang makuha ang inyong **Official Receipt (OR)** at **Mayor's Permit**.\n\n"
-                    . "💬 *Pwede ninyo akong tanungin: \"Magkano ang magagastos sa DTI at Mayor's Permit?\", \"Gaano katagal ang proseso?\", o \"Saan ang opisina sa Caloocan?\"*";
+                    . "💬 *Pwede ninyo akong tanungin: \"Saan ako pupunta para mapasa lahat ng ito?\", \"Magkano ang magagastos?\", o \"Gaano katagal ang proseso?\"*";
             }
             return "### How to Register a New Business Name & Mayor's Permit in Caloocan City\n\n"
                 . "To register a **new business name and secure your Mayor's Permit**, follow these 4 official steps:\n\n"
@@ -931,7 +862,7 @@ class GeminiInquiryService
                 . "  - The **City Treasurer's Office** will issue a Tax Order of Payment based on your **Paid-Up Capital / Initial Investment** plus regulatory fees.\n"
                 . "- **Step 4: Payment & Official Receipt (OR) Issuance**\n"
                 . "  - Pay at the **Treasury Collection Counter** or **Online via GCash/Maya** to receive your Official Receipt and Mayor's Permit.\n\n"
-                . "💬 *You can ask me follow-up questions like: \"How much are the registration fees?\", \"How long does it take?\", or \"Where is the BPLO located?\"*";
+                . "💬 *You can ask me follow-up questions like: \"Where do I go to submit all of these?\", \"How much are the registration fees?\", or \"How long does it take?\"*";
         }
 
         if (preg_match('/(close|retire|retirement|sara|isara|stop|tigil|kansela)/i', $question) && preg_match('/(business|negosyo|permit)/i', $question)) {
@@ -949,6 +880,107 @@ class GeminiInquiryService
                 . "- **2.** Surrender the original **Mayor's Permit**, latest **Official Receipt (OR)**, and **Financial Statement / Gross Sales Declaration** up to the date of closure.\n"
                 . "- **3.** Settle any remaining tax due at the **City Treasurer's Office** to receive your **Certificate of Business Retirement**.\n\n"
                 . "💬 *Do you have an existing assessment number you'd like me to check before retiring the business?*";
+        }
+
+        // 6. Universal Conversational Follow-Ups (Where to go/submit, How long, How much, Requirements, Business Type)
+        if (preg_match('/(saan|san|where|location|address|opisina|office|city hall|pupunta|ipapasa|magpapasa|mag-aapply|pasa|mapasa)/i', $question)) {
+            if ($isTagalog) {
+                return "Narito po kung **saan kayo pupunta upang ipasa ang mga dokumento at magbayad sa Caloocan City**:\n\n"
+                    . "1. **Unang Hakbang (Business Name - Online o DTI):**\n"
+                    . "   - Maaari itong gawin online sa **`https://bnrs.dti.gov.ph`** o sa **DTI Negosyo Center** sa Caloocan City Hall.\n"
+                    . "2. **Ikalawang Hakbang (Barangay Clearance):**\n"
+                    . "   - Sa **Barangay Hall** na nakakasakop sa lugar ng inyong negosyo o ari-arian.\n"
+                    . "3. **Ikatlong Hakbang (Pagpasa ng Lahat ng Requirements at Pagbabayad sa City Hall):**\n"
+                    . "   - **South Caloocan City Hall (Main):** **Ground Floor, Business One-Stop Shop (BOSS) — BPLO at City Treasurer's Office**, 8th Street cor. 8th Avenue, Grace Park East, Caloocan City.\n"
+                    . "   - **North Caloocan City Hall (Satellite):** **BPLO & Treasury Collection Windows**, Zapote Street, Camarin, Caloocan City.\n"
+                    . "   - **Oras ng Opisina:** Lunes hanggang Biyernes, **8:00 AM – 5:00 PM** (Walang noon break).\n\n"
+                    . "💬 *Gusto po ba ninyong malaman kung magkano ang babayaran o kung gaano katagal bago makuha ang permit?*";
+            }
+            return "Here is **where you need to go to submit your documents and process your transaction in Caloocan City**:\n\n"
+                . "1. **Business Name Registration (Step 1):**\n"
+                . "   - Online at **`https://bnrs.dti.gov.ph`** or at the **DTI Negosyo Center** inside Caloocan City Hall.\n"
+                . "2. **Barangay Clearance (Step 2):**\n"
+                . "   - At the **Barangay Hall** where your business or property is located.\n"
+                . "3. **Submission of All Requirements & Tax Assessment (Step 3 & 4):**\n"
+                . "   - **South Caloocan City Hall (Main):** **Ground Floor, Business One-Stop Shop (BOSS) — BPLO & City Treasurer's Office**, 8th Street cor. 8th Avenue, Grace Park East, Caloocan City.\n"
+                . "   - **North Caloocan City Hall:** **Satellite BPLO & Treasury Collection Windows**, Zapote Street, Camarin, Caloocan City.\n"
+                . "   - **Office Hours:** Monday to Friday, **8:00 AM – 5:00 PM**.\n\n"
+                . "💬 *Would you like to know how much the registration fees are or how long the processing takes?*";
+        }
+
+        if (preg_match('/(gaano katagal|how long|ilang araw|days|processing time|mabilis ba|kailan makukuha|oras)/i', $question)) {
+            if ($isTagalog) {
+                return "Tungkol po sa **tagal ng proseso (processing time)**:\n\n"
+                    . "- **DTI Business Name (Online sa `bnrs.dti.gov.ph`):** **15–30 minuto lamang** kapag nakabayad na via GCash/Maya, mada-download agad ang DTI Certificate.\n"
+                    . "- **Barangay Business Clearance at Cedula:** **1 araw** (same-day release sa Barangay Hall o City Hall).\n"
+                    . "- **Caloocan BPLO at City Treasurer's Office (BOSS One-Stop Shop):** **1 hanggang 3 working days** basta kumpleto na ang mga dokumentong ipinasa at nabayaran na ang Tax Order of Payment.\n\n"
+                    . "💬 *Gusto po ba ninyong malaman kung magkano ang babayaran o ano ang mga dapat dalhin?*";
+            }
+            return "Here is the **estimated processing time**:\n\n"
+                . "- **DTI Business Name (`bnrs.dti.gov.ph`):** **15–30 minutes** online (instant certificate download after GCash/Maya payment).\n"
+                . "- **Barangay Business Clearance & Cedula:** **Same day (1 day)**.\n"
+                . "- **Caloocan BPLO & Treasury Assessment (One-Stop Shop):** **1 to 3 working days** once complete documents are submitted and paid.\n\n"
+                . "💬 *Would you like to know the estimated fees or documentary requirements?*";
+        }
+
+        if (preg_match('/(ano.*requirements|anong.*requirements|ano.*kailangan|anong.*kailangan|ano.*dadalhin|anong.*dadalhin|ano.*ipapasa|what.*requirements|what.*documents|kailangan dalhin)/i', $question)) {
+            if ($isTagalog) {
+                return "Narito po ang **kumpletong listahan ng mga dokumentong kailangan ninyong dalhin at ipasa**:\n\n"
+                    . "1. **DTI Business Name Certificate** (kung Sole Proprietorship) o **SEC Registration** (kung Corporation/Partnership)\n"
+                    . "2. **Barangay Business Clearance** (mula sa barangay kung saan naroon ang negosyo)\n"
+                    . "3. **Katibayan ng Pwesto:**\n"
+                    . "   - Kung umuupa: **Notarized Contract of Lease** at Mayor's Permit ng Lessor\n"
+                    . "   - Kung sariling lupa/pwesto: **Transfer Certificate of Title (TCT)** o **Tax Declaration**\n"
+                    . "4. **Community Tax Certificate (Cedula)** at **1 Valid Government ID**\n"
+                    . "5. **Para sa Renewal:** Dalhin ang **Nakaraang Mayor's Permit**, **Official Receipt (OR)**, at **Sworn Declaration of Gross Sales / Financial Statement**.\n\n"
+                    . "💬 *Kumpleto na po ba ang mga ito o may tanong kayo kung paano kumuha ng alinman dito?*";
+            }
+            return "Here is the **complete checklist of documentary requirements to bring and submit**:\n\n"
+                . "1. **DTI Business Name Certificate** (Sole Proprietorship) or **SEC Registration** (Corporation/Partnership)\n"
+                . "2. **Barangay Business Clearance** (from the barangay where the business operates)\n"
+                . "3. **Proof of Business Location:**\n"
+                . "   - If leased: **Notarized Contract of Lease**\n"
+                . "   - If owned: **Land Title (TCT)** or **Real Property Tax Declaration**\n"
+                . "4. **Community Tax Certificate (Cedula)** and **1 Valid Government ID**\n"
+                . "5. **If Renewing:** Bring your **Previous Year's Mayor's Permit**, **Official Receipt (OR)**, and **Sworn Declaration of Gross Receipts**.\n\n"
+                . "💬 *Do you already have these documents, or would you like to know where to get any of them?*";
+        }
+
+        if (preg_match('/(magkano|how much|cost|fee|gastos|babayaran|presyo|rate)/i', $question) && ($category === 'Business Tax & Permits' || $hasHistory)) {
+            if ($isTagalog) {
+                return "Tungkol po sa **gastos at babayaran sa pag-register ng Business Name at Mayor's Permit**:\n\n"
+                    . "1. **DTI Business Name Registration Fee:**\n"
+                    . "   - **Barangay Scope:** ₱200 + ₱30 Documentary Stamp Tax (DST)\n"
+                    . "   - **City / Municipality Scope (Caloocan):** ₱500 + ₱30 DST\n"
+                    . "   - **Regional Scope:** ₱1,000 + ₱30 DST | **National Scope:** ₱2,000 + ₱30 DST\n"
+                    . "2. **Caloocan City Hall (Mayor's Permit & Treasury Fees):**\n"
+                    . "   - **Initial Business Tax:** Karaniwang **1/20 ng 1% (0.05%) ng inyong Paid-Up Capital / Puhunan** para sa bagong negosyo (o base sa Gross Sales kapag renewal).\n"
+                    . "   - **Regulatory Fees:** Mayor's Permit Fee, Sanitary Fee, Garbage Fee, Zoning Fee, at Fire Safety Inspection Fee (karaniwang nasa **₱1,500 hanggang ₱5,000+** depende sa laki at uri ng negosyo).\n\n"
+                    . "💬 *Magkano po ba ang tinatayang puhunan (capital) o anong klaseng negosyo ang itatayo ninyo para mabigyan ko kayo ng mas eksaktong estimate?*";
+            }
+            return "Regarding the **costs and fees for Business Name & Mayor's Permit registration**:\n\n"
+                . "1. **DTI Business Name Registration Fee:**\n"
+                . "   - **Barangay Scope:** ₱200 + ₱30 Documentary Stamp Tax (DST)\n"
+                . "   - **City / Municipality Scope (Caloocan):** ₱500 + ₱30 DST\n"
+                . "   - **Regional Scope:** ₱1,000 + ₱30 DST | **National:** ₱2,000 + ₱30 DST\n"
+                . "2. **Caloocan City Treasury & BPLO Fees:**\n"
+                . "   - **Initial Business Tax:** Based on your **Initial Capital Investment** (or Gross Sales for renewals).\n"
+                . "   - **Regulatory Fees:** Mayor's Permit, Sanitary, Zoning, Garbage, and Fire Safety Inspection Fee (typically **₱1,500 to ₱5,000+** depending on business size and category).\n\n"
+                . "💬 *What type of business or initial capital are you planning so I can give you a closer estimate?*";
+        }
+
+        if (preg_match('/(sari-sari|karinderya|kainan|food|online shop|retail|tindahan|puhunan|capital)/i', $question)) {
+            if ($isTagalog) {
+                return "Magandang ideya po yan! Para sa **Sari-Sari Store / Tindahan / Food Business / Small Enterprise** sa Caloocan:\n\n"
+                    . "- Kung ang puhunan ay maliit, piliin lamang ang **Barangay Scope (₱230)** o **City Scope (₱530)** sa DTI.\n"
+                    . "- Kung **pagkain o tindahan** ang negosyo, kailangan din po ng **Health Certificate / Sanitary Permit** mula sa City Health Department bukod sa Barangay Clearance at Cedula.\n"
+                    . "- Kung ang kabuuang asset ay hindi lalagpas sa ₱3 Milyon, maaari rin kayong mag-apply bilang **BMBE (Barangay Micro Business Enterprise)** para sa dagdag na benepisyo.\n\n"
+                    . "💬 *May napili na po ba kayong pangalan ng negosyo o may tanong pa kayo sa Sanitary/Barangay requirements?*";
+            }
+            return "That's a great business choice! For a **Retail Store, Food Business, or Small Enterprise** in Caloocan City:\n\n"
+                . "- For DTI registration, you only need **Barangay Scope (₱230)** or **City Scope (₱530)**.\n"
+                . "- If you are handling food or beverages, you will also need a **Sanitary Permit & Health Card** from the Caloocan City Health Department alongside your Barangay Clearance and Cedula.\n\n"
+                . "💬 *Do you have any other questions about getting your permits or tax assessment?*";
         }
 
         // 7. Category-based live data + ordinance response
