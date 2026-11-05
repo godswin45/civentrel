@@ -8,5 +8,6 @@
     @keyframes civPop { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
   </style>
   <script src="<?php echo $basePath ?? '../'; ?>assets/js/form-ux.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/form-ux.js') ?: time(); ?>"></script>
+  <?php if (empty($hideGeminiWidget) && file_exists(__DIR__ . '/gemini_chat_widget.php')) { include __DIR__ . '/gemini_chat_widget.php'; } ?>
 </body>
 </html>

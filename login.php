@@ -175,6 +175,14 @@ $recaptchaSiteKey = getenv('RECAPTCHA_SITE_KEY') ?: '';
       </div>
 
       <a 
+        href="taxpayer-inquiry.php"
+        class="flex items-center justify-center gap-2 text-center w-full py-2.5 px-4 bg-brand-light hover:bg-brand-medium hover:text-white text-brand-dark font-bold border border-brand-border rounded-lg text-xs transition focus:outline-none mb-2"
+      >
+        <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
+        <span>Citizen Tax Inquiry &amp; Gemini AI Assistant</span>
+      </a>
+
+      <a 
         href="index.php"
         class="inline-block text-center w-full py-2.5 px-4 bg-white hover:bg-brand-medium hover:text-white text-brand-medium font-medium border border-brand-medium rounded-lg text-sm transition focus:outline-none"
       >
