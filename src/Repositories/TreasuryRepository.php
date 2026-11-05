@@ -390,4 +390,302 @@ class TreasuryRepository {
         return $this->db->update('tr_budget_requests', $filtered, ['id' => $id]) > 0;
     }
 
+    /**
+     * Ensure tr_fund_ledger table exists and backfill historical transactions if empty.
+     */
+    public function ensureFundLedgerTable(): void {
+        static $ensured = false;
+        if ($ensured || !$this->db || !method_exists($this->db, 'getPdo')) {
+            return;
+        }
+        $ensured = true;
+
+        try {
+            $pdo = $this->db->getPdo();
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `tr_fund_ledger` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `fund_code` VARCHAR(20) NOT NULL,
+                  `direction` ENUM('IN', 'OUT') NOT NULL,
+                  `transaction_type` ENUM('collection', 'online_payment', 'disbursement', 'budget_release', 'adjustment', 'reversal') NOT NULL,
+                  `reference_no` VARCHAR(100) NOT NULL,
+                  `counterparty` VARCHAR(255) DEFAULT NULL,
+                  `description` VARCHAR(500) DEFAULT NULL,
+                  `amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+                  `balance_before` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+                  `balance_after` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+                  `performed_by` VARCHAR(255) DEFAULT 'System',
+                  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_ledger_fund` (`fund_code`),
+                  INDEX `idx_ledger_dir` (`direction`),
+                  INDEX `idx_ledger_created` (`created_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+
+            // One-time automatic backfill from existing collections, disbursements, and released budgets
+            $count = (int) $pdo->query("SELECT COUNT(*) FROM `tr_fund_ledger`")->fetchColumn();
+            if ($count === 0) {
+                $this->backfillFundLedger($pdo);
+            }
+        } catch (\Throwable $e) {
+            error_log('[Fund Ledger] ensureFundLedgerTable error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Backfill tr_fund_ledger from existing tr_collections, disbursed tr_disbursements, and released tr_budget_requests.
+     */
+    private function backfillFundLedger(\PDO $pdo): void {
+        try {
+            $funds = $this->getAllFunds();
+            $runningBalances = [];
+            foreach ($funds as $f) {
+                $code = strtoupper((string) ($f['code'] ?? 'GF'));
+                $runningBalances[$code] = (float) ($f['opening_balance'] ?? $f['balance'] ?? 0);
+            }
+
+            $events = [];
+
+            // 1. Collections (Money IN)
+            $collections = $this->db->select('tr_collections', [], '*', 'created_at ASC, id ASC');
+            foreach ($collections as $c) {
+                $mode = strtolower((string) ($c['payment_mode'] ?? 'cash'));
+                $collectedBy = (string) ($c['collected_by'] ?? '');
+                $isOnline = in_array($mode, ['online', 'gcash', 'maya'], true) || stripos($collectedBy, 'online') !== false || stripos($collectedBy, 'paymongo') !== false;
+                $events[] = [
+                    'fund_code'        => strtoupper((string) ($c['fund_code'] ?? $c['fund_id'] ?? 'GF')),
+                    'direction'        => 'IN',
+                    'transaction_type' => $isOnline ? 'online_payment' : 'collection',
+                    'reference_no'     => (string) ($c['or_number'] ?? ('COL-' . ($c['id'] ?? ''))),
+                    'counterparty'     => (string) ($c['payer_name'] ?? 'Taxpayer'),
+                    'description'      => (string) ($c['revenue_source'] ?? 'Revenue Collection') . ' (' . strtoupper($mode ?: 'CASH') . ')',
+                    'amount'           => (float) ($c['amount'] ?? 0),
+                    'performed_by'     => $collectedBy !== '' ? $collectedBy : 'Treasury Staff',
+                    'created_at'       => (string) ($c['created_at'] ?? date('Y-m-d H:i:s')),
+                ];
+            }
+
+            // 2. Disbursed Vouchers (Money OUT)
+            $vouchers = $this->db->select('tr_disbursements', [], '*', 'created_at ASC, id ASC');
+            foreach ($vouchers as $v) {
+                if (strtolower((string) ($v['status'] ?? '')) !== 'disbursed') {
+                    continue;
+                }
+                $events[] = [
+                    'fund_code'        => strtoupper((string) ($v['fund_code'] ?? $v['fund_id'] ?? 'GF')),
+                    'direction'        => 'OUT',
+                    'transaction_type' => 'disbursement',
+                    'reference_no'     => (string) ($v['dv_number'] ?? $v['voucher_no'] ?? ('DV-' . ($v['id'] ?? ''))),
+                    'counterparty'     => (string) ($v['payee'] ?? 'Payee'),
+                    'description'      => (string) ($v['purpose'] ?? 'Disbursement Voucher'),
+                    'amount'           => (float) ($v['amount'] ?? 0),
+                    'performed_by'     => !empty($v['created_by']) ? (string) $v['created_by'] : 'Treasury Staff',
+                    'created_at'       => !empty($v['disbursement_date'])
+                        ? $v['disbursement_date'] . ' ' . substr((string) ($v['created_at'] ?? '12:00:00'), 11, 8)
+                        : (string) ($v['created_at'] ?? date('Y-m-d H:i:s')),
+                ];
+            }
+
+            // 3. Released Budget Requests (Money OUT)
+            $budgets = $this->db->select('tr_budget_requests', [], '*', 'created_at ASC, id ASC');
+            foreach ($budgets as $b) {
+                if (strtolower((string) ($b['status'] ?? '')) !== 'released') {
+                    continue;
+                }
+                $events[] = [
+                    'fund_code'        => strtoupper((string) ($b['fund_code'] ?? $b['fund_id'] ?? 'GF')),
+                    'direction'        => 'OUT',
+                    'transaction_type' => 'budget_release',
+                    'reference_no'     => (string) ($b['request_no'] ?? $b['request_number'] ?? ('BR-' . ($b['id'] ?? ''))),
+                    'counterparty'     => (string) ($b['department_name'] ?? 'Department'),
+                    'description'      => 'Budget Release: ' . (string) ($b['project_title'] ?? 'Departmental Budget'),
+                    'amount'           => (float) ($b['requested_amount'] ?? 0),
+                    'performed_by'     => !empty($b['approved_by']) ? (string) $b['approved_by'] : 'Treasury Admin',
+                    'created_at'       => !empty($b['approved_at']) ? (string) $b['approved_at'] : (string) ($b['created_at'] ?? date('Y-m-d H:i:s')),
+                ];
+            }
+
+            if (empty($events)) {
+                return;
+            }
+
+            usort($events, static fn(array $a, array $b): int => strcmp($a['created_at'], $b['created_at']));
+
+            $stmt = $pdo->prepare("
+                INSERT INTO `tr_fund_ledger`
+                  (`fund_code`, `direction`, `transaction_type`, `reference_no`, `counterparty`, `description`, `amount`, `balance_before`, `balance_after`, `performed_by`, `created_at`)
+                VALUES
+                  (:fund_code, :direction, :transaction_type, :reference_no, :counterparty, :description, :amount, :balance_before, :balance_after, :performed_by, :created_at)
+            ");
+
+            foreach ($events as $ev) {
+                $fc = $ev['fund_code'] ?: 'GF';
+                if (!isset($runningBalances[$fc])) {
+                    $runningBalances[$fc] = 0.0;
+                }
+                $before = $runningBalances[$fc];
+                $after = $ev['direction'] === 'IN'
+                    ? $before + $ev['amount']
+                    : $before - $ev['amount'];
+                $runningBalances[$fc] = $after;
+
+                $stmt->execute([
+                    ':fund_code'        => $fc,
+                    ':direction'        => $ev['direction'],
+                    ':transaction_type' => $ev['transaction_type'],
+                    ':reference_no'     => $ev['reference_no'],
+                    ':counterparty'     => $ev['counterparty'],
+                    ':description'      => mb_substr($ev['description'], 0, 500),
+                    ':amount'           => $ev['amount'],
+                    ':balance_before'   => $before,
+                    ':balance_after'    => $after,
+                    ':performed_by'     => $ev['performed_by'],
+                    ':created_at'       => $ev['created_at'],
+                ]);
+            }
+        } catch (\Throwable $e) {
+            error_log('[Fund Ledger] Backfill failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Record a fund movement (Money IN or Money OUT) in tr_fund_ledger.
+     */
+    public function recordFundMovement(array $entry): int {
+        $this->ensureFundLedgerTable();
+        $row = [
+            'fund_code'        => strtoupper(trim((string) ($entry['fund_code'] ?? 'GF'))),
+            'direction'        => strtoupper(trim((string) ($entry['direction'] ?? 'IN'))) === 'OUT' ? 'OUT' : 'IN',
+            'transaction_type' => $entry['transaction_type'] ?? 'collection',
+            'reference_no'     => trim((string) ($entry['reference_no'] ?? 'N/A')),
+            'counterparty'     => isset($entry['counterparty']) ? mb_substr(trim((string) $entry['counterparty']), 0, 255) : null,
+            'description'      => isset($entry['description']) ? mb_substr(trim((string) $entry['description']), 0, 500) : null,
+            'amount'           => round(abs((float) ($entry['amount'] ?? 0)), 2),
+            'balance_before'   => round((float) ($entry['balance_before'] ?? 0), 2),
+            'balance_after'    => round((float) ($entry['balance_after'] ?? 0), 2),
+            'performed_by'     => !empty($entry['performed_by']) ? mb_substr(trim((string) $entry['performed_by']), 0, 255) : 'System',
+        ];
+        if (!empty($entry['created_at'])) {
+            $row['created_at'] = $entry['created_at'];
+        }
+        $filtered = $this->filterTableColumns('tr_fund_ledger', $row);
+        return (int) $this->db->insert('tr_fund_ledger', $filtered);
+    }
+
+    /**
+     * Query the fund Money In / Money Out ledger with optional filters.
+     */
+    public function getFundLedger(?string $fundCode = null, ?string $direction = null, ?string $dateFrom = null, ?string $dateTo = null, int $limit = 300): array {
+        $this->ensureFundLedgerTable();
+        if (!$this->db || !method_exists($this->db, 'getPdo')) {
+            return [];
+        }
+
+        try {
+            $pdo = $this->db->getPdo();
+            $where = [];
+            $params = [];
+
+            if ($fundCode !== null && trim($fundCode) !== '') {
+                $where[] = 'l.fund_code = :fund_code';
+                $params[':fund_code'] = strtoupper(trim($fundCode));
+            }
+            if ($direction !== null && in_array(strtoupper(trim($direction)), ['IN', 'OUT'], true)) {
+                $where[] = 'l.direction = :direction';
+                $params[':direction'] = strtoupper(trim($direction));
+            }
+            if ($dateFrom !== null && trim($dateFrom) !== '') {
+                $where[] = 'DATE(l.created_at) >= :date_from';
+                $params[':date_from'] = trim($dateFrom);
+            }
+            if ($dateTo !== null && trim($dateTo) !== '') {
+                $where[] = 'DATE(l.created_at) <= :date_to';
+                $params[':date_to'] = trim($dateTo);
+            }
+
+            $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+            $safeLimit = max(1, min(2000, $limit));
+
+            $sql = "
+                SELECT l.*, COALESCE(f.name, l.fund_code) AS fund_name
+                FROM `tr_fund_ledger` l
+                LEFT JOIN `tr_funds` f ON f.code = l.fund_code
+                {$whereSql}
+                ORDER BY l.created_at DESC, l.id DESC
+                LIMIT {$safeLimit}
+            ";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            error_log('[Fund Ledger] getFundLedger error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get per-fund cashflow summary (Opening Balance, Money In, Money Out, Net Flow, Current Balance).
+     */
+    public function getFundCashflowSummary(?string $dateFrom = null, ?string $dateTo = null): array {
+        $this->ensureFundLedgerTable();
+        $funds = $this->getAllFunds();
+        if (empty($funds)) {
+            return [];
+        }
+
+        $aggByFund = [];
+        if ($this->db && method_exists($this->db, 'getPdo')) {
+            try {
+                $pdo = $this->db->getPdo();
+                $where = [];
+                $params = [];
+                if ($dateFrom !== null && trim($dateFrom) !== '') {
+                    $where[] = 'DATE(created_at) >= :date_from';
+                    $params[':date_from'] = trim($dateFrom);
+                }
+                if ($dateTo !== null && trim($dateTo) !== '') {
+                    $where[] = 'DATE(created_at) <= :date_to';
+                    $params[':date_to'] = trim($dateTo);
+                }
+                $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+                $sql = "
+                    SELECT
+                        UPPER(fund_code) AS fund_code,
+                        COALESCE(SUM(CASE WHEN direction = 'IN'  THEN amount ELSE 0 END), 0) AS money_in,
+                        COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS money_out,
+                        COALESCE(SUM(CASE WHEN direction = 'IN'  THEN 1 ELSE 0 END), 0) AS tx_in_count,
+                        COALESCE(SUM(CASE WHEN direction = 'OUT' THEN 1 ELSE 0 END), 0) AS tx_out_count
+                    FROM `tr_fund_ledger`
+                    {$whereSql}
+                    GROUP BY UPPER(fund_code)
+                ";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+                foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+                    $aggByFund[$row['fund_code']] = $row;
+                }
+            } catch (\Throwable $e) {
+                error_log('[Fund Ledger] getFundCashflowSummary error: ' . $e->getMessage());
+            }
+        }
+
+        $result = [];
+        foreach ($funds as $f) {
+            $code = strtoupper((string) ($f['code'] ?? ''));
+            $agg = $aggByFund[$code] ?? null;
+            $moneyIn = (float) ($agg['money_in'] ?? 0);
+            $moneyOut = (float) ($agg['money_out'] ?? 0);
+            $txInCount = (int) ($agg['tx_in_count'] ?? 0);
+            $txOutCount = (int) ($agg['tx_out_count'] ?? 0);
+
+            $f['money_in']     = $moneyIn;
+            $f['money_out']    = $moneyOut;
+            $f['tx_in_count']  = $txInCount;
+            $f['tx_out_count'] = $txOutCount;
+            $f['net_flow']     = $moneyIn - $moneyOut;
+            $result[] = $f;
+        }
+        return $result;
+    }
+
 }

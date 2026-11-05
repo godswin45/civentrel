@@ -16,7 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id <= 0) throw new Exception('Invalid collection ID');
         
         // Delete collection
-        $success = $treasuryService->deleteCollection($id);
+        $actor = $headerUser['full_name'] ?? $_SESSION['username'] ?? 'Treasury Staff';
+        $success = $treasuryService->deleteCollection($id, $actor);
         
         if ($success) {
             echo json_encode(['success' => true]);

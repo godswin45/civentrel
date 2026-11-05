@@ -35,7 +35,8 @@ try {
     if ($fundId !== '')        $data['fund_id']        = $fundId;
     if ($auditNote !== '')     $data['audit_note']     = $auditNote;  // stored if column exists
 
-    $success = $treasuryService->updateCollection($id, $data);
+    $actor = $headerUser['full_name'] ?? $_SESSION['username'] ?? 'Treasury Staff';
+    $success = $treasuryService->updateCollection($id, $data, $actor);
 
     if ($success) {
         echo json_encode(['success' => true]);

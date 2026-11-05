@@ -128,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $successMsg = 'Voucher rejected.';
 
         } elseif (($_POST['action'] ?? '') === 'release_voucher') {
-            $treasuryService->releaseVoucher($_POST['voucher_id']);
+            $treasuryService->releaseVoucher((int) $_POST['voucher_id'], $headerUser['full_name'] ?? 'Treasury Staff');
             
             // Log the transaction
             if ($auditService) {
@@ -156,7 +156,7 @@ if (isset($_GET['ok']) && isset($_GET['msg'])) {
 }
 
 try {
-    $funds = $treasuryService->getFunds();
+    $funds = $treasuryService->getFundCashflowSummary();
     $vouchers = $treasuryService->getAllVouchers();
     $auditService = $auditService ?? null;
 } catch (Exception $e) {
@@ -205,15 +205,35 @@ include __DIR__ . '/../../includes/sidebar.php';
       <?php endif; ?>
 
       <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <div class="lg:col-span-2 bg-white border border-slate-200 rounded-xl shadow-xs p-5 space-y-5 h-fit">
-          <h2 class="text-sm font-extrabold text-slate-800">Fund Position</h2>
+        <div class="lg:col-span-2 bg-white border border-slate-200 rounded-xl shadow-xs p-5 space-y-4 h-fit">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-extrabold text-slate-800">Fund Position &amp; Cashflow</h2>
+              <p class="text-[11px] text-slate-400">Opening balance, Money In / Out, and available balance</p>
+            </div>
+            <a href="index.php#fund-ledger-card" class="text-[11px] font-bold text-brand-dark hover:underline">Full Ledger &rarr;</a>
+          </div>
           <?php foreach ($funds as $f): ?>
-          <div class="border border-slate-100 rounded-lg p-3.5 bg-slate-50/60">
+          <div class="border border-slate-100 rounded-lg p-3.5 bg-slate-50/60 space-y-2">
             <div class="flex justify-between items-baseline">
               <span class="text-xs font-bold text-slate-700"><?= htmlspecialchars($f['name']) ?></span>
-              <span class="text-[10px] font-mono text-slate-400"><?= htmlspecialchars($f['code']) ?></span>
+              <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-200/70 text-slate-600"><?= htmlspecialchars($f['code']) ?></span>
             </div>
-            <div class="text-lg font-mono font-black text-brand-dark mt-1"><?= $treasuryService->formatPeso($f['balance']) ?></div>
+            <div class="text-lg font-mono font-black text-brand-dark"><?= $treasuryService->formatPeso($f['balance']) ?></div>
+            <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/70 text-[10px]">
+              <div>
+                <span class="block text-slate-400 uppercase font-bold">Opening</span>
+                <span class="font-mono font-semibold text-slate-600"><?= $treasuryService->formatPeso($f['opening_balance'] ?? 0) ?></span>
+              </div>
+              <div>
+                <span class="block text-emerald-600 uppercase font-bold"><i class="fa-solid fa-arrow-down-left"></i> Money In</span>
+                <span class="font-mono font-bold text-emerald-600">+<?= $treasuryService->formatPeso($f['money_in'] ?? 0) ?></span>
+              </div>
+              <div>
+                <span class="block text-rose-600 uppercase font-bold"><i class="fa-solid fa-arrow-up-right"></i> Money Out</span>
+                <span class="font-mono font-bold text-rose-600">-<?= $treasuryService->formatPeso($f['money_out'] ?? 0) ?></span>
+              </div>
+            </div>
           </div>
           <?php endforeach; ?>
           <?php if (empty($funds)): ?>

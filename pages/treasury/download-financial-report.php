@@ -7,7 +7,10 @@ if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
 }
 
 try {
-    $funds = $treasuryService->getFunds();
+    $dateFrom = trim((string) ($_GET['date_from'] ?? ''));
+    $dateTo = trim((string) ($_GET['date_to'] ?? ''));
+    $funds = $treasuryService->getFundCashflowSummary($dateFrom ?: null, $dateTo ?: null);
+    $fundLedger = $treasuryService->getFundLedger(null, null, $dateFrom ?: null, $dateTo ?: null, 1000);
     $collections = $treasuryService->getAllCollections();
     $vouchers = $treasuryService->getAllVouchers();
     $budgetRequests = $treasuryService->getAllBudgetRequests();
@@ -21,8 +24,6 @@ $released = array_filter($vouchers, static fn($voucher) => strtolower((string) (
 $totalDisbursed = array_sum(array_map('floatval', array_column($released, 'amount')));
 $netPosition = array_sum(array_map('floatval', array_column($funds, 'balance')));
 $filename = 'treasury-financial-report-' . date('Y-m-d_His') . '.csv';
-$dateFrom = trim((string) ($_GET['date_from'] ?? ''));
-$dateTo = trim((string) ($_GET['date_to'] ?? ''));
 $sourceFilter = trim((string) ($_GET['source'] ?? ''));
 $voucherStatusFilter = strtolower(trim((string) ($_GET['voucher_status'] ?? '')));
 
@@ -111,18 +112,44 @@ foreach ($budgetRequests as $request) {
 }
 fputcsv($output, []);
 
-fputcsv($output, ['FUND POSITION']);
-fputcsv($output, ['Fund Code', 'Fund Name', 'Opening Balance', 'Current Balance', 'Utilization']);
+fputcsv($output, ['FUND POSITION & CASHFLOW SUMMARY']);
+fputcsv($output, ['Fund Code', 'Fund Name', 'Opening Balance', 'Money In (+)', 'Money Out (-)', 'Net Cashflow', 'Current Balance', 'Utilization']);
 foreach ($funds as $fund) {
     $opening = (float) ($fund['opening_balance'] ?? 0);
+    $moneyIn = (float) ($fund['money_in'] ?? 0);
+    $moneyOut = (float) ($fund['money_out'] ?? 0);
+    $netFlow = (float) ($fund['net_flow'] ?? ($moneyIn - $moneyOut));
     $balance = (float) ($fund['balance'] ?? 0);
     $utilization = $opening > 0 ? (($opening - $balance) / $opening) * 100 : 0;
     fputcsv($output, [
         $fund['code'] ?? '',
         $fund['name'] ?? '',
         number_format($opening, 2, '.', ''),
+        number_format($moneyIn, 2, '.', ''),
+        number_format($moneyOut, 2, '.', ''),
+        number_format($netFlow, 2, '.', ''),
         number_format($balance, 2, '.', ''),
         number_format(max(0, $utilization), 2, '.', '') . '%',
+    ]);
+}
+fputcsv($output, []);
+
+fputcsv($output, ['FUND MONEY IN / MONEY OUT LEDGER']);
+fputcsv($output, ['Date', 'Fund Code', 'Fund Name', 'Direction', 'Transaction Type', 'Reference No.', 'Counterparty', 'Description', 'Amount', 'Balance Before', 'Balance After', 'Performed By']);
+foreach ($fundLedger as $entry) {
+    fputcsv($output, [
+        $entry['created_at'] ?? '',
+        $entry['fund_code'] ?? '',
+        $entry['fund_name'] ?? '',
+        $entry['direction'] ?? '',
+        $entry['transaction_type'] ?? '',
+        $entry['reference_no'] ?? '',
+        $entry['counterparty'] ?? '',
+        $entry['description'] ?? '',
+        number_format((float) ($entry['amount'] ?? 0), 2, '.', ''),
+        number_format((float) ($entry['balance_before'] ?? 0), 2, '.', ''),
+        number_format((float) ($entry['balance_after'] ?? 0), 2, '.', ''),
+        $entry['performed_by'] ?? '',
     ]);
 }
 

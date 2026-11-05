@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ]);
             }
         } elseif ($_POST['action'] === 'release') {
-            $treasuryService->releaseBudget((int)$_POST['request_id']);
+            $treasuryService->releaseBudget((int)$_POST['request_id'], $headerUser['full_name'] ?? 'Treasury Admin');
             $successMsg = 'Budget released successfully!';
             
             // Log the transaction

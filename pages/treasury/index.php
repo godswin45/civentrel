@@ -12,7 +12,8 @@ $activePage = 'treasury-index';
 $errorMsg = null;
 
 try {
-    $funds = $treasuryService->getFunds();
+    $funds = $treasuryService->getFundCashflowSummary();
+    $fundLedger = $treasuryService->getFundLedger(null, null, null, null, 200);
     $recent = $treasuryService->getRecentCollections(8);
     $allCollections = $treasuryService->getAllCollections();
     $vouchers = $treasuryService->getAllVouchers();
@@ -20,10 +21,13 @@ try {
     $auditService = $auditService ?? null;
 } catch (Exception $e) {
     $errorMsg = $e->getMessage();
-    $funds = []; $recent = []; $allCollections = []; $vouchers = []; $budgetRequests = []; $auditService = null;
+    $funds = []; $fundLedger = []; $recent = []; $allCollections = []; $vouchers = []; $budgetRequests = []; $auditService = null;
 }
 
 $totalBalance = array_sum(array_column($funds, 'balance'));
+$totalOpeningBalance = array_sum(array_column($funds, 'opening_balance'));
+$totalMoneyIn = array_sum(array_column($funds, 'money_in'));
+$totalMoneyOut = array_sum(array_column($funds, 'money_out'));
 $today = date('Y-m-d');
 $todayCollections = array_filter($allCollections, fn($c) => substr($c['created_at'], 0, 10) === $today);
 $todayTotal = array_sum(array_column($todayCollections, 'amount'));
@@ -410,36 +414,75 @@ include __DIR__ . '/../../includes/sidebar.php';
            CHART ROW 2 — Fund Balances (bar) + Progress legend
       ══════════════════════════════════════════════════════════════ -->
       <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
-        <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+        <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-sm font-extrabold text-slate-800">Fund Balances</h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">Current balance across all active funds</p>
+            <h2 class="text-sm font-extrabold text-slate-800">Fund Balances &amp; Money In / Out Summary</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">Opening balance, total inflows (+ Money In), outflows (- Money Out), and live balance per fund</p>
           </div>
-          <a href="disbursement.php" class="text-[11px] font-bold text-brand-dark hover:underline">Manage &rarr;</a>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <i class="fa-solid fa-arrow-down-left"></i> In: +<?= $treasuryService->formatPeso($totalMoneyIn) ?>
+            </span>
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+              <i class="fa-solid fa-arrow-up-right"></i> Out: -<?= $treasuryService->formatPeso($totalMoneyOut) ?>
+            </span>
+            <a href="#fund-ledger-card" class="text-[11px] font-bold text-white bg-brand-dark hover:opacity-90 px-3 py-1.5 rounded-lg transition">
+              <i class="fa-solid fa-book-open mr-1"></i> Money In/Out Ledger
+            </a>
+            <a href="disbursement.php" class="text-[11px] font-bold text-brand-dark hover:underline ml-1">Manage &rarr;</a>
+          </div>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
           <!-- Bar chart -->
-          <div class="p-5">
-            <div style="position:relative; height:220px;">
+          <div class="p-5 flex flex-col justify-between">
+            <div style="position:relative; height:260px;">
               <canvas id="fundChart"></canvas>
             </div>
+            <div class="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-3 text-center">
+              <div class="bg-slate-50 rounded-xl p-2.5">
+                <span class="text-[10px] font-bold uppercase text-slate-400 block">Total Opening</span>
+                <span class="text-xs font-mono font-black text-slate-700"><?= $treasuryService->formatPeso($totalOpeningBalance) ?></span>
+              </div>
+              <div class="bg-emerald-50/70 rounded-xl p-2.5">
+                <span class="text-[10px] font-bold uppercase text-emerald-600 block">Total Money In</span>
+                <span class="text-xs font-mono font-black text-emerald-700">+<?= $treasuryService->formatPeso($totalMoneyIn) ?></span>
+              </div>
+              <div class="bg-rose-50/70 rounded-xl p-2.5">
+                <span class="text-[10px] font-bold uppercase text-rose-600 block">Total Money Out</span>
+                <span class="text-xs font-mono font-black text-rose-700">-<?= $treasuryService->formatPeso($totalMoneyOut) ?></span>
+              </div>
+            </div>
           </div>
-          <!-- Progress bars legend -->
-          <div class="p-5 space-y-4">
+          <!-- Progress bars + Money In / Out breakdown legend -->
+          <div class="p-5 space-y-3.5 max-h-[380px] overflow-y-auto">
             <?php if (!empty($funds)):
               $maxBal = max(array_column($funds, 'balance') ?: [1]);
               foreach ($funds as $f):
                 $pct = max(4, round(($f['balance'] / max($maxBal, 1)) * 100));
+                $fCode = strtoupper((string) ($f['code'] ?? ''));
             ?>
-            <div>
+            <div class="p-2.5 rounded-xl border border-slate-100 hover:border-brand-border hover:bg-slate-50/60 transition cursor-pointer"
+                 onclick="filterFundLedgerByCode('<?= htmlspecialchars($fCode) ?>')"
+                 title="Click to filter Money In/Out ledger for <?= htmlspecialchars($f['name']) ?>">
               <div class="flex items-baseline justify-between mb-1">
                 <span class="text-xs font-bold text-slate-700 truncate max-w-[60%]"><?= htmlspecialchars($f['name']) ?>
-                  <span class="text-slate-400 font-medium">· <?= htmlspecialchars($f['code']) ?></span>
+                  <span class="text-slate-400 font-medium">· <?= htmlspecialchars($fCode) ?></span>
                 </span>
-                <span class="text-xs font-mono font-bold text-slate-800"><?= $treasuryService->formatPeso($f['balance']) ?></span>
+                <span class="text-xs font-mono font-black text-slate-900"><?= $treasuryService->formatPeso($f['balance']) ?></span>
               </div>
-              <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden mb-1.5">
                 <div class="h-full rounded-full bg-gradient-to-r from-brand-medium to-brand-dark transition-all duration-700" style="width:<?= $pct ?>%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] font-mono">
+                <span class="text-slate-400">Open: <?= $treasuryService->formatPeso($f['opening_balance'] ?? 0) ?></span>
+                <div class="flex items-center gap-3">
+                  <span class="text-emerald-600 font-bold" title="<?= (int) ($f['tx_in_count'] ?? 0) ?> inflow transactions">
+                    <i class="fa-solid fa-arrow-down-left"></i> +<?= $treasuryService->formatPeso($f['money_in'] ?? 0) ?>
+                  </span>
+                  <span class="text-rose-600 font-bold" title="<?= (int) ($f['tx_out_count'] ?? 0) ?> outflow transactions">
+                    <i class="fa-solid fa-arrow-up-right"></i> -<?= $treasuryService->formatPeso($f['money_out'] ?? 0) ?>
+                  </span>
+                </div>
               </div>
             </div>
             <?php endforeach; endif; ?>
@@ -447,6 +490,140 @@ include __DIR__ . '/../../includes/sidebar.php';
               <p class="text-xs text-slate-400">No fund data yet — run the SQL schema.</p>
             <?php endif; ?>
           </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           FUND MONEY IN / MONEY OUT LEDGER
+      ══════════════════════════════════════════════════════════════ -->
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs" id="fund-ledger-card">
+        <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div>
+              <h2 class="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-money-bill-transfer text-brand-dark"></i>
+                Fund Money In / Money Out Ledger
+              </h2>
+              <p class="text-[11px] text-slate-400 mt-0.5">Complete audit trail of every credit (+IN) and debit (-OUT) across all treasury funds</p>
+            </div>
+            <span id="ledger-count-badge" class="inline-flex items-center text-[10px] font-black px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              <?= count($fundLedger) ?> entries
+            </span>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="relative">
+              <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
+              <input type="text" id="ledger-search" placeholder="Search OR/DV/BR, payer/payee…"
+                oninput="filterFundLedger()"
+                class="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg w-48 focus:ring-2 focus:ring-brand-medium/30 focus:border-brand-medium outline-none transition">
+            </div>
+            <select id="ledger-fund-filter" onchange="filterFundLedger()"
+              class="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 font-semibold focus:ring-2 focus:ring-brand-medium/30 outline-none">
+              <option value="">All Funds</option>
+              <?php foreach ($funds as $f): ?>
+              <option value="<?= htmlspecialchars(strtoupper($f['code'])) ?>"><?= htmlspecialchars($f['code'] . ' — ' . $f['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <select id="ledger-dir-filter" onchange="filterFundLedger()"
+              class="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 font-semibold focus:ring-2 focus:ring-brand-medium/30 outline-none">
+              <option value="">All Directions (IN &amp; OUT)</option>
+              <option value="IN">Money IN (+ Credit)</option>
+              <option value="OUT">Money OUT (- Debit)</option>
+            </select>
+            <button type="button" id="ledger-clear-btn" onclick="clearFundLedgerFilters()"
+              class="hidden text-[11px] font-bold text-slate-400 hover:text-brand-dark px-2 py-1.5 rounded-lg transition">
+              <i class="fa-solid fa-xmark"></i> Reset
+            </button>
+          </div>
+        </div>
+        <div class="overflow-x-auto max-h-[420px] overflow-y-auto">
+          <table class="w-full text-xs">
+            <thead class="sticky top-0 z-10">
+              <tr class="text-left text-[10px] uppercase tracking-wider text-slate-400 bg-slate-50 border-b border-slate-100">
+                <th class="px-4 py-3 font-bold">Date &amp; Time</th>
+                <th class="px-4 py-3 font-bold">Fund</th>
+                <th class="px-4 py-3 font-bold">Direction</th>
+                <th class="px-4 py-3 font-bold">Type</th>
+                <th class="px-4 py-3 font-bold">Ref #</th>
+                <th class="px-4 py-3 font-bold">Payer / Payee / Dept</th>
+                <th class="px-4 py-3 font-bold">Description</th>
+                <th class="px-4 py-3 font-bold text-right">Amount</th>
+                <th class="px-4 py-3 font-bold text-right">Balance Before</th>
+                <th class="px-4 py-3 font-bold text-right">Balance After</th>
+                <th class="px-4 py-3 font-bold">Recorded By</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50" id="ledger-tbody">
+              <?php foreach ($fundLedger as $entry):
+                $isIn = strtoupper((string) ($entry['direction'] ?? 'IN')) === 'IN';
+                $fCode = strtoupper((string) ($entry['fund_code'] ?? 'GF'));
+                $txType = str_replace('_', ' ', (string) ($entry['transaction_type'] ?? 'collection'));
+                $searchBlob = strtolower(
+                    ($entry['reference_no'] ?? '') . ' ' .
+                    ($entry['counterparty'] ?? '') . ' ' .
+                    ($entry['description'] ?? '') . ' ' .
+                    ($entry['fund_name'] ?? '') . ' ' .
+                    $fCode . ' ' . $txType
+                );
+              ?>
+              <tr class="ledger-row hover:bg-slate-50/70 transition"
+                  data-fund="<?= htmlspecialchars($fCode) ?>"
+                  data-dir="<?= $isIn ? 'IN' : 'OUT' ?>"
+                  data-search="<?= htmlspecialchars($searchBlob) ?>">
+                <td class="px-4 py-2.5 text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                  <?= date('M j, Y g:i A', strtotime($entry['created_at'])) ?>
+                </td>
+                <td class="px-4 py-2.5 whitespace-nowrap">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono font-bold text-[10px]"
+                        title="<?= htmlspecialchars($entry['fund_name'] ?? $fCode) ?>">
+                    <?= htmlspecialchars($fCode) ?>
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 whitespace-nowrap">
+                  <?php if ($isIn): ?>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-700">
+                    <i class="fa-solid fa-arrow-down-left"></i> MONEY IN
+                  </span>
+                  <?php else: ?>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-700">
+                    <i class="fa-solid fa-arrow-up-right"></i> MONEY OUT
+                  </span>
+                  <?php endif; ?>
+                </td>
+                <td class="px-4 py-2.5 capitalize text-slate-600 font-semibold whitespace-nowrap"><?= htmlspecialchars($txType) ?></td>
+                <td class="px-4 py-2.5 font-mono font-bold text-brand-dark whitespace-nowrap"><?= htmlspecialchars($entry['reference_no'] ?? '—') ?></td>
+                <td class="px-4 py-2.5 font-semibold text-slate-700 max-w-[180px] truncate" title="<?= htmlspecialchars($entry['counterparty'] ?? '') ?>">
+                  <?= htmlspecialchars($entry['counterparty'] ?: '—') ?>
+                </td>
+                <td class="px-4 py-2.5 text-slate-500 max-w-[240px] truncate" title="<?= htmlspecialchars($entry['description'] ?? '') ?>">
+                  <?= htmlspecialchars($entry['description'] ?: '—') ?>
+                </td>
+                <td class="px-4 py-2.5 font-mono font-black text-right whitespace-nowrap <?= $isIn ? 'text-emerald-600' : 'text-rose-600' ?>">
+                  <?= ($isIn ? '+' : '-') . $treasuryService->formatPeso($entry['amount'] ?? 0) ?>
+                </td>
+                <td class="px-4 py-2.5 font-mono text-slate-400 text-right whitespace-nowrap">
+                  <?= $treasuryService->formatPeso($entry['balance_before'] ?? 0) ?>
+                </td>
+                <td class="px-4 py-2.5 font-mono font-bold text-slate-800 text-right whitespace-nowrap">
+                  <?= $treasuryService->formatPeso($entry['balance_after'] ?? 0) ?>
+                </td>
+                <td class="px-4 py-2.5 text-slate-500 whitespace-nowrap"><?= htmlspecialchars($entry['performed_by'] ?? 'System') ?></td>
+              </tr>
+              <?php endforeach; ?>
+              <?php if (empty($fundLedger)): ?>
+              <tr>
+                <td colspan="11" class="px-5 py-10 text-center text-slate-400 text-xs">
+                  No fund movements recorded yet.
+                </td>
+              </tr>
+              <?php endif; ?>
+              <tr id="ledger-no-results" class="hidden">
+                <td colspan="11" class="px-5 py-10 text-center text-slate-400 text-xs">
+                  No fund ledger entries match the current filters.
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -1184,5 +1361,65 @@ include __DIR__ . '/../../includes/sidebar.php';
         hideEditModal();
       }
     });
+
+    // Fund Money In / Out Ledger filtering
+    function filterFundLedger() {
+      const q = (document.getElementById('ledger-search')?.value || '').trim().toLowerCase();
+      const fund = (document.getElementById('ledger-fund-filter')?.value || '').trim().toUpperCase();
+      const dir = (document.getElementById('ledger-dir-filter')?.value || '').trim().toUpperCase();
+      const rows = document.querySelectorAll('#ledger-tbody .ledger-row');
+      let visible = 0;
+
+      rows.forEach(row => {
+        const rFund = (row.getAttribute('data-fund') || '').toUpperCase();
+        const rDir = (row.getAttribute('data-dir') || '').toUpperCase();
+        const rSearch = (row.getAttribute('data-search') || '').toLowerCase();
+
+        const matchFund = !fund || rFund === fund;
+        const matchDir = !dir || rDir === dir;
+        const matchSearch = !q || rSearch.includes(q);
+
+        if (matchFund && matchDir && matchSearch) {
+          row.classList.remove('hidden');
+          visible++;
+        } else {
+          row.classList.add('hidden');
+        }
+      });
+
+      const badge = document.getElementById('ledger-count-badge');
+      if (badge) badge.textContent = visible + ' entries';
+
+      const noRes = document.getElementById('ledger-no-results');
+      if (noRes) {
+        if (visible === 0 && rows.length > 0) noRes.classList.remove('hidden');
+        else noRes.classList.add('hidden');
+      }
+
+      const clearBtn = document.getElementById('ledger-clear-btn');
+      if (clearBtn) {
+        if (q || fund || dir) clearBtn.classList.remove('hidden');
+        else clearBtn.classList.add('hidden');
+      }
+    }
+
+    function filterFundLedgerByCode(code) {
+      const sel = document.getElementById('ledger-fund-filter');
+      if (sel) {
+        sel.value = code;
+        filterFundLedger();
+        document.getElementById('fund-ledger-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    function clearFundLedgerFilters() {
+      const s = document.getElementById('ledger-search');
+      const f = document.getElementById('ledger-fund-filter');
+      const d = document.getElementById('ledger-dir-filter');
+      if (s) s.value = '';
+      if (f) f.value = '';
+      if (d) d.value = '';
+      filterFundLedger();
+    }
     </script>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

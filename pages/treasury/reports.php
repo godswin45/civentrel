@@ -20,7 +20,8 @@ if (!$isValidDate($dateFrom)) $dateFrom = '';
 if (!$isValidDate($dateTo)) $dateTo = '';
 
 try {
-    $funds = $treasuryService->getFunds();
+    $funds = $treasuryService->getFundCashflowSummary($dateFrom ?: null, $dateTo ?: null);
+    $fundLedger = $treasuryService->getFundLedger(null, null, $dateFrom ?: null, $dateTo ?: null, 300);
     $collections = $treasuryService->getAllCollections();
     $vouchers = $treasuryService->getAllVouchers();
     $auditService = $auditService ?? null;
@@ -39,7 +40,7 @@ try {
     }));
 } catch (Exception $e) {
     $errorMsg = $e->getMessage();
-    $funds = []; $collections = []; $vouchers = [];
+    $funds = []; $fundLedger = []; $collections = []; $vouchers = [];
     $auditService = null;
 }
 
@@ -264,6 +265,10 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <span class="text-[10px] text-slate-400">Remaining: <?= $treasuryService->formatPeso($currentBalance) ?></span>
                 <span class="text-[10px] text-slate-400">Opening: <?= $treasuryService->formatPeso($openingBalance) ?></span>
               </div>
+              <div class="flex justify-between mt-1 text-[10px] font-mono">
+                <span class="text-emerald-600 font-bold"><i class="fa-solid fa-arrow-down-left"></i> In: +<?= $treasuryService->formatPeso($f['money_in'] ?? 0) ?></span>
+                <span class="text-rose-600 font-bold"><i class="fa-solid fa-arrow-up-right"></i> Out: -<?= $treasuryService->formatPeso($f['money_out'] ?? 0) ?></span>
+              </div>
             </div>
             <?php endforeach; ?>
             <?php else: ?>
@@ -278,6 +283,126 @@ include __DIR__ . '/../../includes/sidebar.php';
           </div>
         </div>
 
+      </div>
+
+      <!-- Fund Cashflow Statement (Money In / Money Out per Fund) -->
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-extrabold text-slate-800">Fund Cashflow Statement (Money In / Money Out)</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">Opening balance, total credits (+IN), total debits (-OUT), net cashflow, and ending balance per fund</p>
+          </div>
+          <span class="text-[11px] font-bold text-slate-500"><?= count($funds) ?> funds</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left text-[10px] uppercase tracking-wider text-slate-400 bg-slate-50 border-b border-slate-100">
+                <th class="px-5 py-3 font-bold">Fund Code</th>
+                <th class="px-5 py-3 font-bold">Fund Name</th>
+                <th class="px-5 py-3 font-bold text-right">Opening Balance</th>
+                <th class="px-5 py-3 font-bold text-right">Money In (+)</th>
+                <th class="px-5 py-3 font-bold text-right">Money Out (-)</th>
+                <th class="px-5 py-3 font-bold text-right">Net Cashflow</th>
+                <th class="px-5 py-3 font-bold text-right">Current Balance</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+              <?php
+              $sumOpen = 0; $sumIn = 0; $sumOut = 0; $sumNet = 0; $sumBal = 0;
+              foreach ($funds as $f):
+                $open = (float) ($f['opening_balance'] ?? 0);
+                $in   = (float) ($f['money_in'] ?? 0);
+                $out  = (float) ($f['money_out'] ?? 0);
+                $net  = (float) ($f['net_flow'] ?? ($in - $out));
+                $bal  = (float) ($f['balance'] ?? 0);
+                $sumOpen += $open; $sumIn += $in; $sumOut += $out; $sumNet += $net; $sumBal += $bal;
+              ?>
+              <tr class="hover:bg-slate-50/70 transition">
+                <td class="px-5 py-3 font-mono font-bold text-brand-dark"><?= htmlspecialchars($f['code'] ?? '') ?></td>
+                <td class="px-5 py-3 font-semibold text-slate-700"><?= htmlspecialchars($f['name'] ?? '') ?></td>
+                <td class="px-5 py-3 font-mono text-right text-slate-600"><?= $treasuryService->formatPeso($open) ?></td>
+                <td class="px-5 py-3 font-mono font-bold text-right text-emerald-600">+<?= $treasuryService->formatPeso($in) ?> <span class="text-[10px] font-normal text-slate-400">(<?= (int) ($f['tx_in_count'] ?? 0) ?>)</span></td>
+                <td class="px-5 py-3 font-mono font-bold text-right text-rose-600">-<?= $treasuryService->formatPeso($out) ?> <span class="text-[10px] font-normal text-slate-400">(<?= (int) ($f['tx_out_count'] ?? 0) ?>)</span></td>
+                <td class="px-5 py-3 font-mono font-bold text-right <?= $net >= 0 ? 'text-emerald-700' : 'text-rose-700' ?>">
+                  <?= ($net >= 0 ? '+' : '-') . $treasuryService->formatPeso(abs($net)) ?>
+                </td>
+                <td class="px-5 py-3 font-mono font-black text-right text-slate-900"><?= $treasuryService->formatPeso($bal) ?></td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+              <tr class="bg-slate-50 font-black text-slate-900 border-t border-slate-200">
+                <td class="px-5 py-3" colspan="2">TOTAL ACROSS ALL FUNDS</td>
+                <td class="px-5 py-3 font-mono text-right"><?= $treasuryService->formatPeso($sumOpen) ?></td>
+                <td class="px-5 py-3 font-mono text-right text-emerald-700">+<?= $treasuryService->formatPeso($sumIn) ?></td>
+                <td class="px-5 py-3 font-mono text-right text-rose-700">-<?= $treasuryService->formatPeso($sumOut) ?></td>
+                <td class="px-5 py-3 font-mono text-right <?= $sumNet >= 0 ? 'text-emerald-700' : 'text-rose-700' ?>">
+                  <?= ($sumNet >= 0 ? '+' : '-') . $treasuryService->formatPeso(abs($sumNet)) ?>
+                </td>
+                <td class="px-5 py-3 font-mono text-right"><?= $treasuryService->formatPeso($sumBal) ?></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Detailed Fund Money In / Out Ledger -->
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-extrabold text-slate-800">Fund Money In / Out Transaction Ledger</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">Chronological record of all fund credits and debits <?= ($dateFrom || $dateTo) ? 'for the selected date range' : '' ?></p>
+          </div>
+          <span class="text-[11px] font-bold text-slate-500"><?= count($fundLedger) ?> entries</span>
+        </div>
+        <div class="overflow-x-auto max-h-[380px] overflow-y-auto print:max-h-none">
+          <table class="w-full text-xs">
+            <thead class="sticky top-0 bg-slate-50">
+              <tr class="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                <th class="px-4 py-3 font-bold">Date</th>
+                <th class="px-4 py-3 font-bold">Fund</th>
+                <th class="px-4 py-3 font-bold">Direction</th>
+                <th class="px-4 py-3 font-bold">Type</th>
+                <th class="px-4 py-3 font-bold">Ref #</th>
+                <th class="px-4 py-3 font-bold">Counterparty</th>
+                <th class="px-4 py-3 font-bold">Description</th>
+                <th class="px-4 py-3 font-bold text-right">Amount</th>
+                <th class="px-4 py-3 font-bold text-right">Balance Before</th>
+                <th class="px-4 py-3 font-bold text-right">Balance After</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+              <?php foreach ($fundLedger as $entry):
+                $isIn = strtoupper((string) ($entry['direction'] ?? 'IN')) === 'IN';
+              ?>
+              <tr class="hover:bg-slate-50/70">
+                <td class="px-4 py-2.5 font-mono text-[11px] text-slate-500 whitespace-nowrap"><?= date('Y-m-d H:i', strtotime($entry['created_at'])) ?></td>
+                <td class="px-4 py-2.5 font-mono font-bold text-slate-700"><?= htmlspecialchars($entry['fund_code'] ?? '') ?></td>
+                <td class="px-4 py-2.5">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-black <?= $isIn ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700' ?>">
+                    <?= $isIn ? 'IN' : 'OUT' ?>
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 capitalize text-slate-600"><?= htmlspecialchars(str_replace('_', ' ', (string) ($entry['transaction_type'] ?? ''))) ?></td>
+                <td class="px-4 py-2.5 font-mono font-bold text-brand-dark"><?= htmlspecialchars($entry['reference_no'] ?? '') ?></td>
+                <td class="px-4 py-2.5 text-slate-700 font-semibold"><?= htmlspecialchars($entry['counterparty'] ?? '—') ?></td>
+                <td class="px-4 py-2.5 text-slate-500"><?= htmlspecialchars($entry['description'] ?? '—') ?></td>
+                <td class="px-4 py-2.5 font-mono font-black text-right <?= $isIn ? 'text-emerald-600' : 'text-rose-600' ?>">
+                  <?= ($isIn ? '+' : '-') . $treasuryService->formatPeso($entry['amount'] ?? 0) ?>
+                </td>
+                <td class="px-4 py-2.5 font-mono text-right text-slate-400"><?= $treasuryService->formatPeso($entry['balance_before'] ?? 0) ?></td>
+                <td class="px-4 py-2.5 font-mono font-bold text-right text-slate-800"><?= $treasuryService->formatPeso($entry['balance_after'] ?? 0) ?></td>
+              </tr>
+              <?php endforeach; ?>
+              <?php if (empty($fundLedger)): ?>
+              <tr>
+                <td colspan="10" class="px-5 py-8 text-center text-slate-400">No fund ledger entries for this period.</td>
+              </tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
       </div>
 
     </main>

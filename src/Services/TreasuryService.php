@@ -56,6 +56,20 @@ class TreasuryService {
     }
 
     /**
+     * Get per-fund cashflow summary (Opening Balance, Money In, Money Out, Net Flow, Current Balance)
+     */
+    public function getFundCashflowSummary(?string $dateFrom = null, ?string $dateTo = null): array {
+        return $this->treasuryRepo->getFundCashflowSummary($dateFrom, $dateTo);
+    }
+
+    /**
+     * Get fund Money In / Money Out ledger entries
+     */
+    public function getFundLedger(?string $fundCode = null, ?string $direction = null, ?string $dateFrom = null, ?string $dateTo = null, int $limit = 300): array {
+        return $this->treasuryRepo->getFundLedger($fundCode, $direction, $dateFrom, $dateTo, $limit);
+    }
+
+    /**
      * Get recent collections
      */
     public function getRecentCollections(int $limit = 8): array {
@@ -153,9 +167,22 @@ class TreasuryService {
 
         $collectionId = $this->treasuryRepo->insertCollection($rec);
 
-        // Update fund balance
-        $newBalance = $fund['balance'] + $input['amount'];
+        // Update fund balance & record Money IN
+        $balanceBefore = (float) ($fund['balance'] ?? 0);
+        $newBalance = $balanceBefore + (float) $input['amount'];
         $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
+        $this->treasuryRepo->recordFundMovement([
+            'fund_code'        => $fundCode,
+            'direction'        => 'IN',
+            'transaction_type' => 'collection',
+            'reference_no'     => $rec['or_number'],
+            'counterparty'     => $input['payer_name'],
+            'description'      => $input['revenue_source'] . ' (' . strtoupper($paymentMode) . ')',
+            'amount'           => (float) $input['amount'],
+            'balance_before'   => $balanceBefore,
+            'balance_after'    => $newBalance,
+            'performed_by'     => $input['collected_by'] ?? 'Treasury Staff',
+        ]);
 
         return $this->treasuryRepo->getCollectionById($collectionId);
     }
@@ -163,7 +190,7 @@ class TreasuryService {
     /**
      * Update collection
      */
-    public function updateCollection(int $id, array $data): bool {
+    public function updateCollection(int $id, array $data, ?string $performedBy = null): bool {
         $collection = $this->treasuryRepo->getCollectionById($id);
         if (!$collection) {
             throw new \Exception('Collection not found.');
@@ -173,19 +200,61 @@ class TreasuryService {
             $data['payment_mode'] = $this->normalizePaymentMode($data['payment_mode']);
         }
 
-        // Calculate the difference in amount
-        $amountDiff = $data['amount'] - $collection['amount'];
+        $oldFundCode = $collection['fund_code'] ?? $collection['fund_id'] ?? 'GF';
+        $newFundCode = !empty($data['fund_id']) ? $this->resolveFundCode($data['fund_id'], $oldFundCode) : $oldFundCode;
+        if (!empty($data['fund_id'])) {
+            $data['fund_code'] = $newFundCode;
+        }
 
-        // Update collection
+        $oldAmount = (float) ($collection['amount'] ?? 0);
+        $newAmount = isset($data['amount']) ? (float) $data['amount'] : $oldAmount;
+        $amountDiff = $newAmount - $oldAmount;
+        $actor = $performedBy ?: ($_SESSION['username'] ?? 'Treasury Staff');
+        $noteSuffix = !empty($data['audit_note']) ? ' — ' . trim((string) $data['audit_note']) : '';
+
         $success = $this->treasuryRepo->updateCollection($id, $data);
 
-        if ($success && $amountDiff != 0) {
-            $fundCode = $collection['fund_code'] ?? null;
-            if ($fundCode) {
-                $fund = $this->treasuryRepo->getFundById($fundCode);
+        if ($success) {
+            if ($newFundCode !== $oldFundCode) {
+                $oldFund = $this->treasuryRepo->getFundById($oldFundCode);
+                if ($oldFund) {
+                    $oldBefore = (float) ($oldFund['balance'] ?? 0);
+                    $oldAfter = $oldBefore - $oldAmount;
+                    $this->treasuryRepo->updateFundBalance($oldFundCode, $oldAfter);
+                    $this->treasuryRepo->recordFundMovement([
+                        'fund_code' => $oldFundCode, 'direction' => 'OUT', 'transaction_type' => 'adjustment',
+                        'reference_no' => $collection['or_number'] ?? ('COL-' . $id),
+                        'counterparty' => $data['payer_name'] ?? $collection['payer_name'] ?? '',
+                        'description' => 'Reassigned receipt from ' . $oldFundCode . ' to ' . $newFundCode . $noteSuffix,
+                        'amount' => $oldAmount, 'balance_before' => $oldBefore, 'balance_after' => $oldAfter, 'performed_by' => $actor,
+                    ]);
+                }
+                $newFund = $this->treasuryRepo->getFundById($newFundCode);
+                if ($newFund) {
+                    $newBefore = (float) ($newFund['balance'] ?? 0);
+                    $newAfter = $newBefore + $newAmount;
+                    $this->treasuryRepo->updateFundBalance($newFundCode, $newAfter);
+                    $this->treasuryRepo->recordFundMovement([
+                        'fund_code' => $newFundCode, 'direction' => 'IN', 'transaction_type' => 'adjustment',
+                        'reference_no' => $collection['or_number'] ?? ('COL-' . $id),
+                        'counterparty' => $data['payer_name'] ?? $collection['payer_name'] ?? '',
+                        'description' => 'Reassigned receipt from ' . $oldFundCode . ' to ' . $newFundCode . $noteSuffix,
+                        'amount' => $newAmount, 'balance_before' => $newBefore, 'balance_after' => $newAfter, 'performed_by' => $actor,
+                    ]);
+                }
+            } elseif (abs($amountDiff) >= 0.01) {
+                $fund = $this->treasuryRepo->getFundById($oldFundCode);
                 if ($fund) {
-                    $newBalance = $fund['balance'] + $amountDiff;
-                    $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
+                    $balanceBefore = (float) ($fund['balance'] ?? 0);
+                    $newBalance = $balanceBefore + $amountDiff;
+                    $this->treasuryRepo->updateFundBalance($oldFundCode, $newBalance);
+                    $this->treasuryRepo->recordFundMovement([
+                        'fund_code' => $oldFundCode, 'direction' => $amountDiff > 0 ? 'IN' : 'OUT', 'transaction_type' => 'adjustment',
+                        'reference_no' => $collection['or_number'] ?? ('COL-' . $id),
+                        'counterparty' => $data['payer_name'] ?? $collection['payer_name'] ?? '',
+                        'description' => 'Receipt Amount Adjustment (' . ($data['revenue_source'] ?? $collection['revenue_source'] ?? '') . ')' . $noteSuffix,
+                        'amount' => abs($amountDiff), 'balance_before' => $balanceBefore, 'balance_after' => $newBalance, 'performed_by' => $actor,
+                    ]);
                 }
             }
         }
@@ -196,22 +265,31 @@ class TreasuryService {
     /**
      * Delete collection
      */
-    public function deleteCollection(int $id): bool {
+    public function deleteCollection(int $id, ?string $performedBy = null): bool {
         $collection = $this->treasuryRepo->getCollectionById($id);
         if (!$collection) {
             throw new \Exception('Collection not found.');
         }
 
-        // Delete collection
         $success = $this->treasuryRepo->deleteCollection($id);
 
         if ($success) {
-            $fundCode = $collection['fund_code'] ?? null;
+            $fundCode = $collection['fund_code'] ?? $collection['fund_id'] ?? null;
             if ($fundCode) {
                 $fund = $this->treasuryRepo->getFundById($fundCode);
                 if ($fund) {
-                    $newBalance = $fund['balance'] - $collection['amount'];
+                    $balanceBefore = (float) ($fund['balance'] ?? 0);
+                    $amount = (float) ($collection['amount'] ?? 0);
+                    $newBalance = $balanceBefore - $amount;
                     $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
+                    $this->treasuryRepo->recordFundMovement([
+                        'fund_code' => $fund['code'] ?? $fundCode, 'direction' => 'OUT', 'transaction_type' => 'reversal',
+                        'reference_no' => $collection['or_number'] ?? ('COL-' . $id),
+                        'counterparty' => $collection['payer_name'] ?? '',
+                        'description' => 'Receipt Deleted / Reversed: ' . ($collection['revenue_source'] ?? ''),
+                        'amount' => $amount, 'balance_before' => $balanceBefore, 'balance_after' => $newBalance,
+                        'performed_by' => $performedBy ?: ($_SESSION['username'] ?? 'Treasury Staff'),
+                    ]);
                 }
             }
         }
@@ -334,7 +412,7 @@ class TreasuryService {
     /**
      * Release a voucher and debit the fund
      */
-    public function releaseVoucher(int $dvId): array {
+    public function releaseVoucher(int $dvId, ?string $performedBy = null): array {
         $voucher = $this->treasuryRepo->getVoucherById($dvId);
         if (empty($voucher)) {
             throw new \Exception('Voucher not found.');
@@ -343,7 +421,7 @@ class TreasuryService {
             throw new \Exception('Only pending or approved vouchers can be released.');
         }
 
-        $fundCode = $voucher['fund_code'] ?? null;
+        $fundCode = $voucher['fund_code'] ?? $voucher['fund_id'] ?? null;
         if (empty($fundCode)) {
             throw new \Exception('Voucher has no fund assigned.');
         }
@@ -357,9 +435,23 @@ class TreasuryService {
             throw new \Exception('Insufficient balance in ' . $fund['name'] . ' to release this voucher.');
         }
 
-        // Debit fund
-        $newBalance = $fund['balance'] - $voucher['amount'];
+        // Debit fund & record Money OUT in ledger
+        $balanceBefore = (float) ($fund['balance'] ?? 0);
+        $amount = (float) ($voucher['amount'] ?? 0);
+        $newBalance = $balanceBefore - $amount;
         $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
+        $this->treasuryRepo->recordFundMovement([
+            'fund_code'        => $fund['code'] ?? $fundCode,
+            'direction'        => 'OUT',
+            'transaction_type' => 'disbursement',
+            'reference_no'     => $voucher['dv_number'] ?? $voucher['voucher_no'] ?? ('DV-' . $dvId),
+            'counterparty'     => $voucher['payee'] ?? '',
+            'description'      => $voucher['purpose'] ?? 'Disbursement Voucher',
+            'amount'           => $amount,
+            'balance_before'   => $balanceBefore,
+            'balance_after'    => $newBalance,
+            'performed_by'     => $performedBy ?: ($voucher['created_by'] ?? ($_SESSION['username'] ?? 'Treasury Staff')),
+        ]);
 
         // Update voucher status
         $this->treasuryRepo->updateVoucherStatus($dvId, 'disbursed');
@@ -573,7 +665,7 @@ class TreasuryService {
             throw new \Exception('Payment not found.');
         }
 
-        if ($payment['status'] !== 'pending') {
+        if (!in_array(strtolower((string) ($payment['status'] ?? '')), ['pending', 'processing'], true)) {
             throw new \Exception('Payment already processed.');
         }
 
@@ -598,33 +690,51 @@ class TreasuryService {
         // Check if payment was successful
         if (isset($gatewayResponse['status']) && $gatewayResponse['status'] === 'success') {
             // Generate OR number
-            $orNumber = $this->generateORNumber();
+            $orNumber = !empty($payment['receipt_no']) ? $payment['receipt_no'] : $this->generateORNumber();
 
             $fundCode = $payment['fund_code'] ?? $this->resolveFundCode($payment['fund_id'] ?? null);
+            $payerName = $payment['citizen_name'] ?? $payment['taxpayer_name'] ?? 'Citizen';
+            $revSource = $payment['payment_source'] ?? $payment['payment_type'] ?? 'Online Payment';
 
             // Record in revenue collections
-            $paymentMode = ($payment['payment_gateway'] ?? 'gcash') === 'maya' ? 'maya' : 'gcash';
+            $paymentMode = ($payment['payment_gateway'] ?? $payment['payment_method'] ?? 'gcash') === 'maya' ? 'maya' : 'gcash';
 
             $this->treasuryRepo->insertCollection([
                 'or_number'      => $orNumber,
-                'payer_name'     => $payment['citizen_name'],
-                'revenue_source' => $payment['payment_source'],
+                'payer_name'     => $payerName,
+                'revenue_source' => $revSource,
                 'fund_code'      => $fundCode,
                 'amount'         => $payment['amount'],
                 'payment_mode'   => $paymentMode,
                 'collected_by'   => 'Online Payment System',
             ]);
 
-            // Update fund balance
+            // Update fund balance & record Money IN in ledger
             $fund = $this->treasuryRepo->getFundById($fundCode);
             if ($fund) {
-                $newBalance = $fund['balance'] + $payment['amount'];
+                $balanceBefore = (float) ($fund['balance'] ?? 0);
+                $amount = (float) ($payment['amount'] ?? 0);
+                $newBalance = $balanceBefore + $amount;
                 $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
+                $this->treasuryRepo->recordFundMovement([
+                    'fund_code'        => $fund['code'] ?? $fundCode,
+                    'direction'        => 'IN',
+                    'transaction_type' => 'online_payment',
+                    'reference_no'     => $orNumber,
+                    'counterparty'     => $payerName,
+                    'description'      => $revSource . ' via ' . strtoupper($paymentMode) . ' (Ref: ' . $paymentReference . ')',
+                    'amount'           => $amount,
+                    'balance_before'   => $balanceBefore,
+                    'balance_after'    => $newBalance,
+                    'performed_by'     => 'Online Payment System',
+                ]);
             }
 
             // Update payment status to completed
             $this->treasuryRepo->updateOnlinePaymentStatus($payment['id'], 'completed', [
-                'or_number' => $orNumber,
+                'or_number'  => $orNumber,
+                'receipt_no' => $orNumber,
+                'settled_at' => date('Y-m-d H:i:s'),
             ]);
 
             return $this->treasuryRepo->getOnlinePaymentById($payment['id']);
@@ -781,7 +891,7 @@ class TreasuryService {
     /**
      * Release budget
      */
-    public function releaseBudget(int $requestId): array {
+    public function releaseBudget(int $requestId, ?string $performedBy = null): array {
         $request = $this->treasuryRepo->getBudgetRequestById($requestId);
         if (!$request) {
             throw new \Exception('Budget request not found.');
@@ -790,11 +900,26 @@ class TreasuryService {
             throw new \Exception('Budget request must be approved before release.');
         }
 
-        // Debit fund
-        $fund = $this->treasuryRepo->getFundById($request['fund_code']);
+        // Debit fund & record Money OUT in ledger
+        $fundCode = $request['fund_code'] ?? $request['fund_id'] ?? 'GF';
+        $fund = $this->treasuryRepo->getFundById($fundCode);
         if ($fund) {
-            $newBalance = $fund['balance'] - $request['requested_amount'];
-            $this->treasuryRepo->updateFundBalance($request['fund_code'], $newBalance);
+            $balanceBefore = (float) ($fund['balance'] ?? 0);
+            $amount = (float) ($request['requested_amount'] ?? 0);
+            $newBalance = $balanceBefore - $amount;
+            $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
+            $this->treasuryRepo->recordFundMovement([
+                'fund_code'        => $fund['code'] ?? $fundCode,
+                'direction'        => 'OUT',
+                'transaction_type' => 'budget_release',
+                'reference_no'     => $request['request_no'] ?? $request['request_number'] ?? ('BR-' . $requestId),
+                'counterparty'     => $request['department_name'] ?? 'Department',
+                'description'      => 'Budget Release: ' . ($request['project_title'] ?? 'Departmental Budget'),
+                'amount'           => $amount,
+                'balance_before'   => $balanceBefore,
+                'balance_after'    => $newBalance,
+                'performed_by'     => $performedBy ?: ($request['approved_by'] ?? ($_SESSION['username'] ?? 'Treasury Admin')),
+            ]);
         }
 
         // Update request status

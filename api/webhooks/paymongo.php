@@ -113,18 +113,46 @@ try {
     ], ['id' => $payment['id']]);
 
     // 6. Record in Collections (Treasury Dashboard reads this!)
+    $fundCode = $payment['fund_code'] ?? 'GF';
+    $payerName = $payment['taxpayer_name'] ?? $payment['citizen_name'] ?? 'Citizen';
+    $revSource = $payment['payment_type'] ?? $payment['payment_source'] ?? 'Online Payment';
+    $payMode = $payment['payment_method'] ?? $payment['payment_gateway'] ?? 'online';
+
     $db->insert('tr_collections', [
         'or_number' => $receiptNo,
-        'payer_name' => $payment['taxpayer_name'],
-        'revenue_source' => $payment['payment_type'],
-        'fund_id' => $payment['fund_id'],
-        'fund_code' => $payment['fund_code'],
+        'payer_name' => $payerName,
+        'revenue_source' => $revSource,
+        'fund_id' => $payment['fund_id'] ?? $fundCode,
+        'fund_code' => $fundCode,
         'amount' => $payment['amount'],
-        'payment_mode' => $payment['payment_method'],
+        'payment_mode' => $payMode,
         'collected_by' => 'PayMongo Webhook',
         'status' => 'valid',
         'created_at' => date('Y-m-d H:i:s')
     ]);
+
+    // 7. Credit Fund Balance & Record Money IN in Fund Ledger
+    if (isset($treasuryRepo)) {
+        $fund = $treasuryRepo->getFundById($fundCode);
+        if ($fund) {
+            $balanceBefore = (float) ($fund['balance'] ?? 0);
+            $amount = (float) ($payment['amount'] ?? 0);
+            $newBalance = $balanceBefore + $amount;
+            $treasuryRepo->updateFundBalance($fundCode, $newBalance);
+            $treasuryRepo->recordFundMovement([
+                'fund_code'        => $fund['code'] ?? $fundCode,
+                'direction'        => 'IN',
+                'transaction_type' => 'online_payment',
+                'reference_no'     => $receiptNo,
+                'counterparty'     => $payerName,
+                'description'      => $revSource . ' via ' . strtoupper((string) $payMode) . ' (Ref: ' . ($payment['payment_reference'] ?? '') . ')',
+                'amount'           => $amount,
+                'balance_before'   => $balanceBefore,
+                'balance_after'    => $newBalance,
+                'performed_by'     => 'PayMongo Webhook',
+            ]);
+        }
+    }
 
     $db->getPdo()->commit();
 
