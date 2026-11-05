@@ -376,9 +376,12 @@ class GeminiInquiryService
         }
 
         try {
-            // 1. Check if question or accountRef mentions an Assessment No (e.g. RPT-2026-001, BIZ-2026-001)
+            $repo = new \App\Repositories\TreasuryRepository($this->db);
+            $assessments = $repo->getAllTaxAssessments();
+            $stalls = $repo->getAllMarketStalls();
+
+            // 1. Check if question or accountRef mentions an Assessment No (e.g. RPT-2026-001, BIZ-2026-001, TA-2026-102)
             $combined = $question . ' ' . $accountRef . ' ' . $senderName;
-            $assessments = $this->pdo->query("SELECT * FROM `tr_tax_assessments` ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
 
             foreach ($assessments as $ass) {
                 $assNo = (string) ($ass['assessment_no'] ?? '');
@@ -396,8 +399,7 @@ class GeminiInquiryService
                 }
             }
 
-            // 2. Check Market Stalls (e.g. A-01, A-03, B-01, C-01, D-01 or vendor name)
-            $stalls = $this->pdo->query("SELECT * FROM `tr_market_stalls` ORDER BY stall_number ASC")->fetchAll(PDO::FETCH_ASSOC);
+            // 2. Check Market Stalls (e.g. A-01, A-03, B-01, MS-A01 or vendor name)
             if (!$matchedRecord) {
                 foreach ($stalls as $st) {
                     $stNo = (string) ($st['stall_number'] ?? '');
@@ -432,19 +434,22 @@ class GeminiInquiryService
 
             // Include summary of active Tax Assessments
             $assSummaries = [];
-            foreach (array_slice($assessments, 0, 8) as $a) {
-                $tot = (float) ($a['basic_amount'] ?? 0) + (float) ($a['surcharge_amount'] ?? 0) + (float) ($a['penalty_amount'] ?? 0);
+            foreach (array_slice($assessments, 0, 10) as $a) {
+                $basicAmt = (float) ($a['basic_amount'] ?? $a['tax_due'] ?? 0);
+                $surAmt   = (float) ($a['surcharge_amount'] ?? 0);
+                $penAmt   = (float) ($a['penalty_amount'] ?? 0);
+                $tot      = $basicAmt + $surAmt + $penAmt;
                 $assSummaries[] = sprintf(
                     "%s (%s - %s): Basic=₱%s, Surcharge=₱%s, Interest=₱%s, Total=₱%s, Due=%s, Status=%s",
-                    $a['assessment_no'],
-                    $a['taxpayer_name'],
-                    $a['tax_type'],
-                    number_format((float) $a['basic_amount'], 2),
-                    number_format((float) $a['surcharge_amount'], 2),
-                    number_format((float) $a['penalty_amount'], 2),
+                    $a['assessment_no'] ?? '',
+                    $a['taxpayer_name'] ?? '',
+                    $a['tax_type'] ?? '',
+                    number_format($basicAmt, 2),
+                    number_format($surAmt, 2),
+                    number_format($penAmt, 2),
                     number_format($tot, 2),
                     $a['due_date'] ?? 'N/A',
-                    strtoupper((string) $a['status'])
+                    strtoupper((string) ($a['status'] ?? 'unpaid'))
                 );
             }
             if ($assSummaries) {
@@ -748,3 +753,4 @@ class GeminiInquiryService
         }
     }
 }
+

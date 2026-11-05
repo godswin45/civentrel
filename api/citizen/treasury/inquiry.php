@@ -8,6 +8,8 @@
 
 require_once __DIR__ . '/../../../src/bootstrap.php';
 
+@ini_set('display_errors', '0');
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
@@ -20,6 +22,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 function respondInquiry(array $payload, int $statusCode = 200): void
 {
+    while (ob_get_level() > 0 && ob_get_length() > 0) {
+        @ob_clean();
+        break;
+    }
     http_response_code($statusCode);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit;
@@ -95,3 +101,4 @@ try {
         'message' => 'Internal server error: ' . $e->getMessage(),
     ], 500);
 }
+

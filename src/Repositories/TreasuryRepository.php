@@ -780,37 +780,37 @@ class TreasuryRepository {
                 } catch (\Throwable $e) {}
             }
 
-            // Seed tr_market_stalls if empty
+            // Seed tr_market_stalls if fewer than 6 stalls exist
             $stallCount = (int) $pdo->query("SELECT COUNT(*) FROM `tr_market_stalls`")->fetchColumn();
-            if ($stallCount === 0) {
+            if ($stallCount < 6) {
                 $stalls = [
                     ['A-01', 'Wet Section (Meat & Fish) - Grace Park Public Market', 'Santos, Roberto', 3500.00, 'occupied', date('Y-m-d', strtotime('-5 days'))],
                     ['A-02', 'Wet Section (Meat & Fish) - Grace Park Public Market', 'Dela Cruz, Marites', 3500.00, 'occupied', date('Y-m-d', strtotime('-42 days'))],
+                    ['A-03', 'Wet Section (Fish) - Grace Park Public Market', 'Bautista, Lorna', 1500.00, 'occupied', date('Y-m-d', strtotime('-38 days'))],
                     ['B-01', 'Dry Goods & Grocery - Maypajo Public Market', 'Reyes, Teresita', 2800.00, 'occupied', date('Y-m-d', strtotime('-48 days'))],
                     ['B-02', 'Dry Goods & Grocery - Maypajo Public Market', 'Mendoza, Danilo', 2800.00, 'occupied', date('Y-m-d', strtotime('-8 days'))],
-                    ['C-01', 'Vegetables & Fruits - Bagong Silang Market', 'Villanueva,Elena', 2200.00, 'occupied', date('Y-m-d', strtotime('-65 days'))],
+                    ['C-01', 'Vegetables & Fruits - Bagong Silang Market', 'Villanueva, Elena', 2200.00, 'occupied', date('Y-m-d', strtotime('-65 days'))],
                     ['C-02', 'Vegetables & Fruits - Bagong Silang Market', null, 2200.00, 'vacant', null],
                     ['D-01', 'Carinderia / Food Court - Sangandaan Market', 'Bautista, Lorna', 4200.00, 'occupied', date('Y-m-d', strtotime('-38 days'))],
-                    ['D-02', 'Carinderia / Food Court - Sangandaan Market', null, 4200.00, 'maintenance', null],
                 ];
-                $stmt = $pdo->prepare("INSERT INTO `tr_market_stalls` (`stall_number`, `section`, `vendor_name`, `monthly_fee`, `status`, `last_payment_date`) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT IGNORE INTO `tr_market_stalls` (`stall_number`, `section`, `vendor_name`, `monthly_fee`, `status`, `last_payment_date`) VALUES (?, ?, ?, ?, ?, ?)");
                 foreach ($stalls as $s) {
                     $stmt->execute($s);
                 }
             }
 
-            // Seed tr_tax_assessments if empty
+            // Seed tr_tax_assessments if fewer than 5 assessments exist
             $assessCount = (int) $pdo->query("SELECT COUNT(*) FROM `tr_tax_assessments`")->fetchColumn();
-            if ($assessCount === 0) {
+            if ($assessCount < 5) {
                 $assessments = [
-                    ['AS-2026-RPT001', 'Dela Cruz, Juan (TCT-104920 Brgy. 86)', 'balcogodwin5@gmail.com', 'Real Property Tax', 1850000.00, 18500.00, date('Y-m-d', strtotime('-65 days')), 'overdue'],
+                    ['RPT-2026-001', 'Roberto Dela Cruz (TCT-104920 Brgy. 86)', 'balcogodwin5@gmail.com', 'Real Property Tax', 1250000.00, 12500.00, date('Y-m-d', strtotime('-65 days')), 'overdue'],
+                    ['BIZ-2026-001', 'Grace Villanueva Enterprises (Monumento)', 'balcogodwin5@gmail.com', 'Business Tax', 1840000.00, 18400.00, date('Y-m-d', strtotime('-45 days')), 'overdue'],
                     ['AS-2026-RPT002', 'Golden Metro Realty Corp. (Monumento)', 'balcogodwin5@gmail.com', 'Real Property Tax', 6400000.00, 64000.00, date('Y-m-d', strtotime('-35 days')), 'overdue'],
-                    ['AS-2026-BIZ003', 'North Caloocan Hardware & Supply', 'balcogodwin5@gmail.com', 'Business Tax', 950000.00, 14250.00, date('Y-m-d', strtotime('-45 days')), 'overdue'],
                     ['AS-2026-BIZ004', 'Grace Park Auto Parts & Trading', 'balcogodwin5@gmail.com', 'Business Tax', 1200000.00, 18000.00, date('Y-m-d', strtotime('+12 days')), 'unpaid'],
                     ['AS-2026-RPT005', 'Reyes, Maria Clara (Camarin Res. Lot)', 'balcogodwin5@gmail.com', 'Real Property Tax', 780000.00, 7800.00, date('Y-m-d', strtotime('+20 days')), 'unpaid'],
                     ['AS-2026-BIZ006', 'Sangandaan Bakeshop & Cafe', 'balcogodwin5@gmail.com', 'Mayor\'s Permit Fee', 320000.00, 4800.00, date('Y-m-d', strtotime('-15 days')), 'paid'],
                 ];
-                $stmt = $pdo->prepare("INSERT INTO `tr_tax_assessments` (`assessment_no`, `taxpayer_name`, `taxpayer_email`, `tax_type`, `assessed_value`, `tax_due`, `due_date`, `status`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT IGNORE INTO `tr_tax_assessments` (`assessment_no`, `taxpayer_name`, `taxpayer_email`, `tax_type`, `assessed_value`, `tax_due`, `due_date`, `status`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                 foreach ($assessments as $a) {
                     $stmt->execute($a);
                 }
@@ -821,14 +821,63 @@ class TreasuryRepository {
     }
 
     /**
+     * Normalize a tax assessment row so both legacy (`tax_due`, `status`='overdue')
+     * and itemized (`basic_amount`, `surcharge_amount`, `penalty_amount`) keys are always present.
+     */
+    private function normalizeTaxAssessmentRow(array $row): array {
+        $basic = (float) ($row['basic_amount'] ?? $row['tax_due'] ?? 0);
+        $rawStatus = strtolower((string) ($row['status'] ?? 'unpaid'));
+        $dueDate = (string) ($row['due_date'] ?? '');
+        $isOverdue = ($rawStatus === 'overdue' || $rawStatus === 'delinquent')
+            || ($rawStatus !== 'paid' && $dueDate !== '' && strtotime($dueDate) < strtotime(date('Y-m-d')));
+
+        $surcharge = isset($row['surcharge_amount'])
+            ? (float) $row['surcharge_amount']
+            : ($isOverdue ? round($basic * 0.25, 2) : 0.00);
+        $penalty = isset($row['penalty_amount'])
+            ? (float) $row['penalty_amount']
+            : ($isOverdue ? round($basic * 0.04, 2) : 0.00);
+
+        $row['basic_amount']     = $basic;
+        $row['tax_due']          = $basic;
+        $row['surcharge_amount'] = $surcharge;
+        $row['penalty_amount']   = $penalty;
+        $row['total_due']        = $basic + $surcharge + $penalty;
+        $row['td_or_permit_no']  = $row['td_or_permit_no'] ?? $row['assessment_no'] ?? 'N/A';
+        $row['period_covered']   = $row['period_covered'] ?? ('FY ' . substr($dueDate ?: date('Y'), 0, 4));
+        if ($rawStatus === 'overdue') {
+            $row['status'] = 'delinquent';
+        }
+        return $row;
+    }
+
+    /**
+     * Normalize a market stall row so both `monthly_fee`/`monthly_rate` and `status`/`occupancy_status` exist.
+     */
+    private function normalizeMarketStallRow(array $row): array {
+        $fee = (float) ($row['monthly_rate'] ?? $row['monthly_fee'] ?? 0);
+        $status = strtolower((string) ($row['occupancy_status'] ?? $row['status'] ?? 'vacant'));
+        if ($status === 'vacant' && !empty($row['vendor_name'])) {
+            $status = 'occupied';
+        }
+        $row['monthly_fee']      = $fee;
+        $row['monthly_rate']     = $fee;
+        $row['status']           = $status;
+        $row['occupancy_status'] = $status;
+        return $row;
+    }
+
+    /**
      * Get all tax assessments (optionally filtered by status).
      */
     public function getAllTaxAssessments(?string $status = null): array {
         $this->ensureTaxAssessmentsAndMarketStalls();
         if ($status !== null && trim($status) !== '') {
-            return $this->db->select('tr_tax_assessments', ['status' => strtolower(trim($status))], '*', 'due_date ASC, id DESC');
+            $rows = $this->db->select('tr_tax_assessments', ['status' => strtolower(trim($status))], '*', 'due_date ASC, id DESC');
+        } else {
+            $rows = $this->db->select('tr_tax_assessments', [], '*', 'FIELD(status, "overdue", "unpaid", "partially_paid", "paid"), due_date ASC');
         }
-        return $this->db->select('tr_tax_assessments', [], '*', 'FIELD(status, "overdue", "unpaid", "partially_paid", "paid"), due_date ASC');
+        return array_map([$this, 'normalizeTaxAssessmentRow'], $rows);
     }
 
     /**
@@ -837,7 +886,7 @@ class TreasuryRepository {
     public function getTaxAssessmentById(int $id): ?array {
         $this->ensureTaxAssessmentsAndMarketStalls();
         $rows = $this->db->select('tr_tax_assessments', ['id' => $id]);
-        return $rows[0] ?? null;
+        return isset($rows[0]) ? $this->normalizeTaxAssessmentRow($rows[0]) : null;
     }
 
     /**
@@ -846,7 +895,7 @@ class TreasuryRepository {
     public function getTaxAssessmentByNo(string $assessmentNo): ?array {
         $this->ensureTaxAssessmentsAndMarketStalls();
         $rows = $this->db->select('tr_tax_assessments', ['assessment_no' => trim($assessmentNo)]);
-        return $rows[0] ?? null;
+        return isset($rows[0]) ? $this->normalizeTaxAssessmentRow($rows[0]) : null;
     }
 
     /**
@@ -854,6 +903,12 @@ class TreasuryRepository {
      */
     public function insertTaxAssessment(array $data): int {
         $this->ensureTaxAssessmentsAndMarketStalls();
+        if (!isset($data['tax_due']) && isset($data['basic_amount'])) {
+            $data['tax_due'] = (float) $data['basic_amount'];
+        }
+        if (isset($data['status']) && strtolower((string) $data['status']) === 'delinquent') {
+            $data['status'] = 'overdue';
+        }
         $filtered = $this->filterTableColumns('tr_tax_assessments', $data);
         return (int) $this->db->insert('tr_tax_assessments', $filtered);
     }
@@ -863,7 +918,11 @@ class TreasuryRepository {
      */
     public function updateTaxAssessmentStatus(int $id, string $status): bool {
         $this->ensureTaxAssessmentsAndMarketStalls();
-        return $this->db->update('tr_tax_assessments', ['status' => strtolower(trim($status))], ['id' => $id]) > 0;
+        $st = strtolower(trim($status));
+        if ($st === 'delinquent') {
+            $st = 'overdue';
+        }
+        return $this->db->update('tr_tax_assessments', ['status' => $st], ['id' => $id]) > 0;
     }
 
     /**
@@ -871,7 +930,8 @@ class TreasuryRepository {
      */
     public function getAllMarketStalls(): array {
         $this->ensureTaxAssessmentsAndMarketStalls();
-        return $this->db->select('tr_market_stalls', [], '*', 'stall_number ASC');
+        $rows = $this->db->select('tr_market_stalls', [], '*', 'stall_number ASC');
+        return array_map([$this, 'normalizeMarketStallRow'], $rows);
     }
 
     /**
@@ -880,7 +940,7 @@ class TreasuryRepository {
     public function getMarketStallByNumber(string $stallNumber): ?array {
         $this->ensureTaxAssessmentsAndMarketStalls();
         $rows = $this->db->select('tr_market_stalls', ['stall_number' => trim($stallNumber)]);
-        return $rows[0] ?? null;
+        return isset($rows[0]) ? $this->normalizeMarketStallRow($rows[0]) : null;
     }
 
     /**
