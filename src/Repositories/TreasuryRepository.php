@@ -105,6 +105,7 @@ class TreasuryRepository {
      * Insert collection
      */
     public function insertCollection(array $data): int {
+        $this->ensureCollectionBreakdownColumns();
         $filtered = $this->filterTableColumns('tr_collections', $data);
         return $this->db->insert('tr_collections', $filtered);
     }
@@ -113,6 +114,7 @@ class TreasuryRepository {
      * Update collection
      */
     public function updateCollection(int $id, array $data): bool {
+        $this->ensureCollectionBreakdownColumns();
         $filtered = $this->filterTableColumns('tr_collections', $data);
         if (empty($filtered)) {
             return false;
@@ -686,6 +688,214 @@ class TreasuryRepository {
             $result[] = $f;
         }
         return $result;
+    }
+
+    /**
+     * Self-healing schema check: ensure itemized breakdown columns exist on tr_collections.
+     */
+    public function ensureCollectionBreakdownColumns(): void {
+        static $checked = false;
+        if ($checked || !$this->db || !method_exists($this->db, 'getPdo')) {
+            return;
+        }
+        $checked = true;
+
+        $existing = $this->getTableColumns('tr_collections');
+        if (empty($existing)) {
+            return;
+        }
+
+        $definitions = [
+            'basic_amount'     => 'DECIMAL(14,2) NOT NULL DEFAULT 0.00',
+            'surcharge_amount' => 'DECIMAL(14,2) NOT NULL DEFAULT 0.00',
+            'penalty_amount'   => 'DECIMAL(14,2) NOT NULL DEFAULT 0.00',
+            'assessment_no'    => 'VARCHAR(100) NULL DEFAULT NULL',
+            'stall_number'     => 'VARCHAR(50) NULL DEFAULT NULL',
+        ];
+
+        try {
+            $pdo = $this->db->getPdo();
+            $addedAny = false;
+            foreach ($definitions as $col => $def) {
+                if (!in_array($col, $existing, true)) {
+                    $pdo->exec("ALTER TABLE `tr_collections` ADD COLUMN `{$col}` {$def}");
+                    $addedAny = true;
+                }
+            }
+            if ($addedAny) {
+                $pdo->exec("UPDATE `tr_collections` SET `basic_amount` = `amount` WHERE `basic_amount` = 0 AND `surcharge_amount` = 0 AND `penalty_amount` = 0");
+            }
+        } catch (\Throwable $e) {
+            error_log('[Treasury] ensureCollectionBreakdownColumns error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Ensure tr_tax_assessments and tr_market_stalls exist and seed realistic Caloocan City records if empty.
+     */
+    public function ensureTaxAssessmentsAndMarketStalls(): void {
+        static $ensured = false;
+        if ($ensured || !$this->db || !method_exists($this->db, 'getPdo')) {
+            return;
+        }
+        $ensured = true;
+
+        try {
+            $pdo = $this->db->getPdo();
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `tr_market_stalls` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `stall_number` VARCHAR(50) NOT NULL UNIQUE,
+                  `section` VARCHAR(100) NOT NULL,
+                  `vendor_name` VARCHAR(255) DEFAULT NULL,
+                  `monthly_fee` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                  `status` ENUM('occupied', 'vacant', 'maintenance') NOT NULL DEFAULT 'vacant',
+                  `last_payment_date` DATE DEFAULT NULL,
+                  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `tr_tax_assessments` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `assessment_no` VARCHAR(100) NOT NULL UNIQUE,
+                  `taxpayer_name` VARCHAR(255) NOT NULL,
+                  `taxpayer_email` VARCHAR(255) DEFAULT NULL,
+                  `tax_type` VARCHAR(100) NOT NULL,
+                  `assessed_value` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+                  `tax_due` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+                  `due_date` DATE NOT NULL,
+                  `status` ENUM('unpaid', 'partially_paid', 'paid', 'overdue') NOT NULL DEFAULT 'unpaid',
+                  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+
+            $taCols = $this->getTableColumns('tr_tax_assessments');
+            if (!empty($taCols) && !in_array('taxpayer_email', $taCols, true)) {
+                try {
+                    $pdo->exec("ALTER TABLE `tr_tax_assessments` ADD COLUMN `taxpayer_email` VARCHAR(255) DEFAULT NULL AFTER `taxpayer_name`");
+                } catch (\Throwable $e) {}
+            }
+
+            // Seed tr_market_stalls if empty
+            $stallCount = (int) $pdo->query("SELECT COUNT(*) FROM `tr_market_stalls`")->fetchColumn();
+            if ($stallCount === 0) {
+                $stalls = [
+                    ['A-01', 'Wet Section (Meat & Fish) - Grace Park Public Market', 'Santos, Roberto', 3500.00, 'occupied', date('Y-m-d', strtotime('-5 days'))],
+                    ['A-02', 'Wet Section (Meat & Fish) - Grace Park Public Market', 'Dela Cruz, Marites', 3500.00, 'occupied', date('Y-m-d', strtotime('-42 days'))],
+                    ['B-01', 'Dry Goods & Grocery - Maypajo Public Market', 'Reyes, Teresita', 2800.00, 'occupied', date('Y-m-d', strtotime('-48 days'))],
+                    ['B-02', 'Dry Goods & Grocery - Maypajo Public Market', 'Mendoza, Danilo', 2800.00, 'occupied', date('Y-m-d', strtotime('-8 days'))],
+                    ['C-01', 'Vegetables & Fruits - Bagong Silang Market', 'Villanueva,Elena', 2200.00, 'occupied', date('Y-m-d', strtotime('-65 days'))],
+                    ['C-02', 'Vegetables & Fruits - Bagong Silang Market', null, 2200.00, 'vacant', null],
+                    ['D-01', 'Carinderia / Food Court - Sangandaan Market', 'Bautista, Lorna', 4200.00, 'occupied', date('Y-m-d', strtotime('-38 days'))],
+                    ['D-02', 'Carinderia / Food Court - Sangandaan Market', null, 4200.00, 'maintenance', null],
+                ];
+                $stmt = $pdo->prepare("INSERT INTO `tr_market_stalls` (`stall_number`, `section`, `vendor_name`, `monthly_fee`, `status`, `last_payment_date`) VALUES (?, ?, ?, ?, ?, ?)");
+                foreach ($stalls as $s) {
+                    $stmt->execute($s);
+                }
+            }
+
+            // Seed tr_tax_assessments if empty
+            $assessCount = (int) $pdo->query("SELECT COUNT(*) FROM `tr_tax_assessments`")->fetchColumn();
+            if ($assessCount === 0) {
+                $assessments = [
+                    ['AS-2026-RPT001', 'Dela Cruz, Juan (TCT-104920 Brgy. 86)', 'balcogodwin5@gmail.com', 'Real Property Tax', 1850000.00, 18500.00, date('Y-m-d', strtotime('-65 days')), 'overdue'],
+                    ['AS-2026-RPT002', 'Golden Metro Realty Corp. (Monumento)', 'balcogodwin5@gmail.com', 'Real Property Tax', 6400000.00, 64000.00, date('Y-m-d', strtotime('-35 days')), 'overdue'],
+                    ['AS-2026-BIZ003', 'North Caloocan Hardware & Supply', 'balcogodwin5@gmail.com', 'Business Tax', 950000.00, 14250.00, date('Y-m-d', strtotime('-45 days')), 'overdue'],
+                    ['AS-2026-BIZ004', 'Grace Park Auto Parts & Trading', 'balcogodwin5@gmail.com', 'Business Tax', 1200000.00, 18000.00, date('Y-m-d', strtotime('+12 days')), 'unpaid'],
+                    ['AS-2026-RPT005', 'Reyes, Maria Clara (Camarin Res. Lot)', 'balcogodwin5@gmail.com', 'Real Property Tax', 780000.00, 7800.00, date('Y-m-d', strtotime('+20 days')), 'unpaid'],
+                    ['AS-2026-BIZ006', 'Sangandaan Bakeshop & Cafe', 'balcogodwin5@gmail.com', 'Mayor\'s Permit Fee', 320000.00, 4800.00, date('Y-m-d', strtotime('-15 days')), 'paid'],
+                ];
+                $stmt = $pdo->prepare("INSERT INTO `tr_tax_assessments` (`assessment_no`, `taxpayer_name`, `taxpayer_email`, `tax_type`, `assessed_value`, `tax_due`, `due_date`, `status`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                foreach ($assessments as $a) {
+                    $stmt->execute($a);
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('[Treasury] ensureTaxAssessmentsAndMarketStalls error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get all tax assessments (optionally filtered by status).
+     */
+    public function getAllTaxAssessments(?string $status = null): array {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        if ($status !== null && trim($status) !== '') {
+            return $this->db->select('tr_tax_assessments', ['status' => strtolower(trim($status))], '*', 'due_date ASC, id DESC');
+        }
+        return $this->db->select('tr_tax_assessments', [], '*', 'FIELD(status, "overdue", "unpaid", "partially_paid", "paid"), due_date ASC');
+    }
+
+    /**
+     * Get tax assessment by ID.
+     */
+    public function getTaxAssessmentById(int $id): ?array {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        $rows = $this->db->select('tr_tax_assessments', ['id' => $id]);
+        return $rows[0] ?? null;
+    }
+
+    /**
+     * Get tax assessment by assessment number.
+     */
+    public function getTaxAssessmentByNo(string $assessmentNo): ?array {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        $rows = $this->db->select('tr_tax_assessments', ['assessment_no' => trim($assessmentNo)]);
+        return $rows[0] ?? null;
+    }
+
+    /**
+     * Insert a new tax assessment.
+     */
+    public function insertTaxAssessment(array $data): int {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        $filtered = $this->filterTableColumns('tr_tax_assessments', $data);
+        return (int) $this->db->insert('tr_tax_assessments', $filtered);
+    }
+
+    /**
+     * Update tax assessment status.
+     */
+    public function updateTaxAssessmentStatus(int $id, string $status): bool {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        return $this->db->update('tr_tax_assessments', ['status' => strtolower(trim($status))], ['id' => $id]) > 0;
+    }
+
+    /**
+     * Get all market stalls.
+     */
+    public function getAllMarketStalls(): array {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        return $this->db->select('tr_market_stalls', [], '*', 'stall_number ASC');
+    }
+
+    /**
+     * Get market stall by stall number.
+     */
+    public function getMarketStallByNumber(string $stallNumber): ?array {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        $rows = $this->db->select('tr_market_stalls', ['stall_number' => trim($stallNumber)]);
+        return $rows[0] ?? null;
+    }
+
+    /**
+     * Update market stall last payment date and status.
+     */
+    public function updateMarketStallPaymentDate(string $stallNumber, string $date, ?string $vendorName = null): bool {
+        $this->ensureTaxAssessmentsAndMarketStalls();
+        $update = [
+            'last_payment_date' => $date,
+            'status'            => 'occupied',
+        ];
+        if ($vendorName !== null && trim($vendorName) !== '') {
+            $update['vendor_name'] = trim($vendorName);
+        }
+        return $this->db->update('tr_market_stalls', $update, ['stall_number' => trim($stallNumber)]) > 0;
     }
 
 }

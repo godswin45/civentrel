@@ -155,21 +155,49 @@ class TreasuryService {
         }
         $paymentMode = $this->normalizePaymentMode($input['payment_mode'] ?? 'cash');
 
+        $totalAmount = round((float) ($input['amount'] ?? 0), 2);
+        $surchargeAmount = round(max(0, (float) ($input['surcharge_amount'] ?? 0)), 2);
+        $penaltyAmount = round(max(0, (float) ($input['penalty_amount'] ?? 0)), 2);
+        $basicAmount = isset($input['basic_amount']) && (float) $input['basic_amount'] > 0
+            ? round((float) $input['basic_amount'], 2)
+            : round(max(0, $totalAmount - $surchargeAmount - $penaltyAmount), 2);
+        $assessmentNo = !empty($input['assessment_no']) ? trim((string) $input['assessment_no']) : null;
+        $stallNumber = !empty($input['stall_number']) ? trim((string) $input['stall_number']) : null;
+
         $rec = [
-            'or_number'      => $this->generateORNumber(),
-            'payer_name'     => $input['payer_name'],
-            'revenue_source' => $input['revenue_source'],
-            'fund_code'      => $fundCode,
-            'amount'         => $input['amount'],
-            'payment_mode'   => $paymentMode,
-            'collected_by'   => $input['collected_by'] ?? null,
+            'or_number'        => $this->generateORNumber(),
+            'payer_name'       => $input['payer_name'],
+            'revenue_source'   => $input['revenue_source'],
+            'fund_id'          => $input['fund_id'] ?? $fundCode,
+            'fund_code'        => $fundCode,
+            'basic_amount'     => $basicAmount,
+            'surcharge_amount' => $surchargeAmount,
+            'penalty_amount'   => $penaltyAmount,
+            'amount'           => $totalAmount,
+            'assessment_no'    => $assessmentNo,
+            'stall_number'     => $stallNumber,
+            'payment_mode'     => $paymentMode,
+            'collected_by'     => $input['collected_by'] ?? null,
         ];
 
         $collectionId = $this->treasuryRepo->insertCollection($rec);
 
+        // If linked to a tax assessment, mark it as paid
+        if ($assessmentNo !== null && $assessmentNo !== '') {
+            $assessment = $this->treasuryRepo->getTaxAssessmentByNo($assessmentNo);
+            if ($assessment) {
+                $this->treasuryRepo->updateTaxAssessmentStatus((int) $assessment['id'], 'paid');
+            }
+        }
+
+        // If linked to a market stall, update last_payment_date and status
+        if ($stallNumber !== null && $stallNumber !== '') {
+            $this->treasuryRepo->updateMarketStallPaymentDate($stallNumber, date('Y-m-d'), $input['payer_name'] ?? null);
+        }
+
         // Update fund balance & record Money IN
         $balanceBefore = (float) ($fund['balance'] ?? 0);
-        $newBalance = $balanceBefore + (float) $input['amount'];
+        $newBalance = $balanceBefore + $totalAmount;
         $this->treasuryRepo->updateFundBalance($fundCode, $newBalance);
         $this->treasuryRepo->recordFundMovement([
             'fund_code'        => $fundCode,
@@ -177,14 +205,125 @@ class TreasuryService {
             'transaction_type' => 'collection',
             'reference_no'     => $rec['or_number'],
             'counterparty'     => $input['payer_name'],
-            'description'      => $input['revenue_source'] . ' (' . strtoupper($paymentMode) . ')',
-            'amount'           => (float) $input['amount'],
+            'description'      => $input['revenue_source'] . ' (' . strtoupper($paymentMode) . ')' . ($assessmentNo ? ' [Assessment: ' . $assessmentNo . ']' : '') . ($stallNumber ? ' [Stall: ' . $stallNumber . ']' : ''),
+            'amount'           => $totalAmount,
             'balance_before'   => $balanceBefore,
             'balance_after'    => $newBalance,
             'performed_by'     => $input['collected_by'] ?? 'Treasury Staff',
         ]);
 
         return $this->treasuryRepo->getCollectionById($collectionId);
+    }
+
+    /**
+     * Get all tax assessments (Real Property Tax, Business Tax, etc.)
+     */
+    public function getAllTaxAssessments(?string $status = null): array {
+        return $this->treasuryRepo->getAllTaxAssessments($status);
+    }
+
+    /**
+     * Get one tax assessment by ID
+     */
+    public function getTaxAssessmentById(int $id): ?array {
+        return $this->treasuryRepo->getTaxAssessmentById($id);
+    }
+
+    /**
+     * Create a new tax assessment
+     */
+    public function createTaxAssessment(array $input): int {
+        $dueDate = trim((string) ($input['due_date'] ?? date('Y-m-d')));
+        $status = $dueDate < date('Y-m-d') ? 'overdue' : 'unpaid';
+        $prefix = stripos((string) ($input['tax_type'] ?? ''), 'Property') !== false ? 'RPT' : 'BIZ';
+        $assessmentNo = !empty($input['assessment_no'])
+            ? trim((string) $input['assessment_no'])
+            : ('AS-' . date('Y') . '-' . $prefix . strtoupper(substr(bin2hex(random_bytes(3)), 0, 4)));
+
+        return $this->treasuryRepo->insertTaxAssessment([
+            'assessment_no'  => $assessmentNo,
+            'taxpayer_name'  => trim((string) ($input['taxpayer_name'] ?? '')),
+            'taxpayer_email' => !empty($input['taxpayer_email']) ? trim((string) $input['taxpayer_email']) : null,
+            'tax_type'       => trim((string) ($input['tax_type'] ?? 'Real Property Tax')),
+            'assessed_value' => (float) ($input['assessed_value'] ?? 0),
+            'tax_due'        => (float) ($input['tax_due'] ?? 0),
+            'due_date'       => $dueDate,
+            'status'         => $status,
+        ]);
+    }
+
+    /**
+     * Get all market stalls
+     */
+    public function getAllMarketStalls(): array {
+        return $this->treasuryRepo->getAllMarketStalls();
+    }
+
+    /**
+     * Dispatch an official Billing / Overdue Payment Reminder Notice to a taxpayer via SMTP.
+     */
+    public function sendTaxpayerReminder(int $assessmentId, ?string $sentBy = null): array {
+        $assessment = $this->treasuryRepo->getTaxAssessmentById($assessmentId);
+        if (!$assessment) {
+            throw new \Exception('Tax assessment not found.');
+        }
+
+        $recipientEmail = !empty($assessment['taxpayer_email']) ? $assessment['taxpayer_email'] : 'balcogodwin5@gmail.com';
+        $taxpayerName = $assessment['taxpayer_name'] ?? 'Valued Taxpayer';
+        $assessmentNo = $assessment['assessment_no'] ?? ('AS-' . $assessmentId);
+        $taxType = $assessment['tax_type'] ?? 'Local Government Tax';
+        $basicDue = (float) ($assessment['tax_due'] ?? 0);
+        $dueDate = $assessment['due_date'] ?? date('Y-m-d');
+        $dueTs = strtotime($dueDate);
+        $isOverdue = strtolower((string) ($assessment['status'] ?? '')) === 'overdue' || $dueTs < strtotime(date('Y-m-d'));
+        $monthsLate = $isOverdue ? max(1, min(36, (int) ceil((time() - $dueTs) / (30 * 86400)))) : 0;
+        $surcharge = $isOverdue ? round($basicDue * 0.25, 2) : 0.0;
+        $interest  = $isOverdue ? round(($basicDue + $surcharge) * (0.02 * $monthsLate), 2) : 0.0;
+        $totalDue  = $basicDue + $surcharge + $interest;
+
+        $subject = ($isOverdue ? '[OVERDUE TAX NOTICE] ' : '[BILLING REMINDER] ') . $assessmentNo . ' — Caloocan City Treasurer\'s Office';
+        $body = '
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+          <div style="background:linear-gradient(135deg,#176B87,#0f172a);padding:24px 30px;color:#fff;">
+            <p style="margin:0;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#86B6F6;">Republic of the Philippines &bull; City of Caloocan</p>
+            <h2 style="margin:6px 0 0;font-size:18px;">Office of the City Treasurer — ' . ($isOverdue ? 'Delinquency &amp; Overdue Notice' : 'Payment Reminder Notice') . '</h2>
+          </div>
+          <div style="padding:26px 30px;background:#ffffff;color:#1e293b;font-size:13px;line-height:1.6;">
+            <p>Dear <strong>' . htmlspecialchars($taxpayerName) . '</strong>,</p>
+            <p>This is an official reminder from the <strong>Caloocan City Treasurer\'s Office (Civentral Revenue Portal)</strong> regarding your tax assessment below:</p>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;border:1px solid #e2e8f0;">
+              <tr style="background:#f8fafc;"><td style="padding:9px 12px;color:#64748b;font-weight:bold;">Assessment No.</td><td style="padding:9px 12px;font-family:monospace;font-weight:bold;">' . htmlspecialchars($assessmentNo) . '</td></tr>
+              <tr><td style="padding:9px 12px;color:#64748b;font-weight:bold;">Tax Type</td><td style="padding:9px 12px;">' . htmlspecialchars($taxType) . '</td></tr>
+              <tr style="background:#f8fafc;"><td style="padding:9px 12px;color:#64748b;font-weight:bold;">Due Date</td><td style="padding:9px 12px;">' . htmlspecialchars($dueDate) . '</td></tr>
+              <tr><td style="padding:9px 12px;color:#64748b;font-weight:bold;">Basic Tax Due</td><td style="padding:9px 12px;">&#8369;' . number_format($basicDue, 2) . '</td></tr>
+              <tr style="background:#f8fafc;"><td style="padding:9px 12px;color:#b45309;font-weight:bold;">Surcharge (25%)</td><td style="padding:9px 12px;color:#b45309;">&#8369;' . number_format($surcharge, 2) . '</td></tr>
+              <tr><td style="padding:9px 12px;color:#be123c;font-weight:bold;">Delinquency Interest (2%/mo)</td><td style="padding:9px 12px;color:#be123c;">&#8369;' . number_format($interest, 2) . '</td></tr>
+              <tr style="background:#eef5ff;"><td style="padding:11px 12px;color:#176B87;font-weight:bold;">TOTAL AMOUNT PAYABLE</td><td style="padding:11px 12px;color:#176B87;font-weight:bold;font-size:16px;">&#8369;' . number_format($totalDue, 2) . '</td></tr>
+            </table>
+            <p>You may settle your account at the City Treasurer\'s Office or online via the Civentral Citizen Payment Portal (GCash / Maya / Card).</p>
+          </div>
+          <div style="background:#f8fafc;padding:14px 30px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">
+            Dispatched by ' . htmlspecialchars($sentBy ?: 'Treasury Notification Service') . ' &bull; Caloocan City Revenue &amp; Treasury System
+          </div>
+        </div>';
+
+        $sent = false;
+        try {
+            require_once __DIR__ . '/../../config/mailer.php';
+            if (function_exists('sendSystemEmail')) {
+                $sent = (bool) sendSystemEmail($recipientEmail, $taxpayerName, $subject, $body);
+            }
+        } catch (\Throwable $e) {
+            error_log('[Taxpayer Reminder] Email error: ' . $e->getMessage());
+        }
+
+        return [
+            'sent'          => $sent,
+            'assessment_no' => $assessmentNo,
+            'taxpayer_name' => $taxpayerName,
+            'email'         => $recipientEmail,
+            'total_due'     => $totalDue,
+        ];
     }
 
     /**

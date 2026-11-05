@@ -24,6 +24,8 @@ try {
     $fundLedger = $treasuryService->getFundLedger(null, null, $dateFrom ?: null, $dateTo ?: null, 300);
     $collections = $treasuryService->getAllCollections();
     $vouchers = $treasuryService->getAllVouchers();
+    $taxAssessments = $treasuryService->getAllTaxAssessments();
+    $marketStalls = $treasuryService->getAllMarketStalls();
     $auditService = $auditService ?? null;
 
     $collections = array_values(array_filter($collections, static function (array $collection) use ($dateFrom, $dateTo, $sourceFilter): bool {
@@ -40,7 +42,7 @@ try {
     }));
 } catch (Exception $e) {
     $errorMsg = $e->getMessage();
-    $funds = []; $fundLedger = []; $collections = []; $vouchers = [];
+    $funds = []; $fundLedger = []; $collections = []; $vouchers = []; $taxAssessments = []; $marketStalls = [];
     $auditService = null;
 }
 
@@ -402,6 +404,94 @@ include __DIR__ . '/../../includes/sidebar.php';
               <?php endif; ?>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Tax Assessments & Delinquency Summary + Market Stall Occupancy -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
+          <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-extrabold text-slate-800">Tax Assessments &amp; Delinquency Schedule</h2>
+              <p class="text-[11px] text-slate-400 mt-0.5">RPT &amp; Business Tax assessments with surcharge/interest breakdown</p>
+            </div>
+            <span class="text-[11px] font-bold text-slate-500"><?= count($taxAssessments) ?> records</span>
+          </div>
+          <div class="overflow-x-auto max-h-[320px] overflow-y-auto print:max-h-none">
+            <table class="w-full text-xs">
+              <thead class="sticky top-0 bg-slate-50">
+                <tr class="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                  <th class="px-4 py-2.5 font-bold">Ref #</th>
+                  <th class="px-4 py-2.5 font-bold">Taxpayer</th>
+                  <th class="px-4 py-2.5 font-bold text-right">Basic</th>
+                  <th class="px-4 py-2.5 font-bold text-right">Surcharge + Pen.</th>
+                  <th class="px-4 py-2.5 font-bold text-right">Total Due</th>
+                  <th class="px-4 py-2.5 font-bold text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-50">
+                <?php foreach ($taxAssessments as $ta):
+                  $bAmt = (float) ($ta['basic_amount'] ?? 0);
+                  $spAmt = (float) ($ta['surcharge_amount'] ?? 0) + (float) ($ta['penalty_amount'] ?? 0);
+                  $tAmt = $bAmt + $spAmt;
+                  $tSt = strtolower((string) ($ta['status'] ?? 'unpaid'));
+                ?>
+                <tr class="hover:bg-slate-50/70">
+                  <td class="px-4 py-2.5 font-mono font-bold text-brand-dark"><?= htmlspecialchars($ta['assessment_no'] ?? '') ?></td>
+                  <td class="px-4 py-2.5 font-semibold text-slate-700"><?= htmlspecialchars($ta['taxpayer_name'] ?? '') ?></td>
+                  <td class="px-4 py-2.5 font-mono text-right text-slate-600"><?= $treasuryService->formatPeso($bAmt) ?></td>
+                  <td class="px-4 py-2.5 font-mono text-right <?= $spAmt > 0 ? 'text-amber-600 font-bold' : 'text-slate-400' ?>"><?= $treasuryService->formatPeso($spAmt) ?></td>
+                  <td class="px-4 py-2.5 font-mono font-black text-right text-slate-900"><?= $treasuryService->formatPeso($tAmt) ?></td>
+                  <td class="px-4 py-2.5 text-center">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase <?= $tSt === 'paid' ? 'bg-emerald-100 text-emerald-700' : ($tSt === 'delinquent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700') ?>">
+                      <?= htmlspecialchars($tSt) ?>
+                    </span>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs">
+          <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-extrabold text-slate-800">Public Market Stall Occupancy Ledger</h2>
+              <p class="text-[11px] text-slate-400 mt-0.5">Stall occupancy, vendor assignments, and monthly rental rates</p>
+            </div>
+            <span class="text-[11px] font-bold text-slate-500"><?= count($marketStalls) ?> stalls</span>
+          </div>
+          <div class="overflow-x-auto max-h-[320px] overflow-y-auto print:max-h-none">
+            <table class="w-full text-xs">
+              <thead class="sticky top-0 bg-slate-50">
+                <tr class="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                  <th class="px-4 py-2.5 font-bold">Stall #</th>
+                  <th class="px-4 py-2.5 font-bold">Section</th>
+                  <th class="px-4 py-2.5 font-bold">Vendor</th>
+                  <th class="px-4 py-2.5 font-bold text-right">Monthly Rate</th>
+                  <th class="px-4 py-2.5 font-bold text-center">Occupancy</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-50">
+                <?php foreach ($marketStalls as $ms):
+                  $occ = strtolower((string) ($ms['occupancy_status'] ?? 'vacant'));
+                ?>
+                <tr class="hover:bg-slate-50/70">
+                  <td class="px-4 py-2.5 font-mono font-bold text-brand-dark"><?= htmlspecialchars($ms['stall_number'] ?? '') ?></td>
+                  <td class="px-4 py-2.5 text-slate-500"><?= htmlspecialchars($ms['section'] ?? '') ?></td>
+                  <td class="px-4 py-2.5 font-semibold text-slate-700"><?= htmlspecialchars($ms['vendor_name'] ?: '— Vacant —') ?></td>
+                  <td class="px-4 py-2.5 font-mono font-bold text-right text-slate-800"><?= $treasuryService->formatPeso($ms['monthly_rate'] ?? 0) ?></td>
+                  <td class="px-4 py-2.5 text-center">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase <?= $occ === 'occupied' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' ?>">
+                      <?= htmlspecialchars($occ) ?>
+                    </span>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

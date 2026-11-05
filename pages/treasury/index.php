@@ -10,6 +10,20 @@ if (empty($_SESSION['user_id']) && empty($_SESSION['employee_id'])) {
 $pageTitle = 'Treasury Dashboard';
 $activePage = 'treasury-index';
 $errorMsg = null;
+$successMsg = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send_tax_reminder') {
+    try {
+        $assessmentId = (int) ($_POST['assessment_id'] ?? 0);
+        $sent = $treasuryService->sendTaxpayerReminder($assessmentId, $headerUser['full_name'] ?? 'Treasury Staff');
+        $successMsg = 'Official Billing & Overdue Reminder Notice processed for ' . ($sent['taxpayer_name'] ?? 'Taxpayer') . ' (' . ($sent['assessment_no'] ?? '') . ').';
+        if (isset($auditService) && $auditService) {
+            $auditService->logAction('send_tax_reminder', 'treasury', 'Sent tax reminder for assessment #' . ($sent['assessment_no'] ?? $assessmentId));
+        }
+    } catch (Exception $e) {
+        $errorMsg = $e->getMessage();
+    }
+}
 
 try {
     $funds = $treasuryService->getFundCashflowSummary();
@@ -18,10 +32,12 @@ try {
     $allCollections = $treasuryService->getAllCollections();
     $vouchers = $treasuryService->getAllVouchers();
     $budgetRequests = $treasuryService->getAllBudgetRequests();
+    $taxAssessments = $treasuryService->getAllTaxAssessments();
+    $marketStalls = $treasuryService->getAllMarketStalls();
     $auditService = $auditService ?? null;
 } catch (Exception $e) {
     $errorMsg = $e->getMessage();
-    $funds = []; $fundLedger = []; $recent = []; $allCollections = []; $vouchers = []; $budgetRequests = []; $auditService = null;
+    $funds = []; $fundLedger = []; $recent = []; $allCollections = []; $vouchers = []; $budgetRequests = []; $taxAssessments = []; $marketStalls = []; $auditService = null;
 }
 
 $totalBalance = array_sum(array_column($funds, 'balance'));
@@ -104,9 +120,25 @@ if ($n * $sumXX - $sumX * $sumX == 0) {
 $b = ($sumY - $m * $sumX) / $n;
 $predictedNextMonth = $m * 12 + $b; // Predict next month (index 12)
 if ($predictedNextMonth < 0) $predictedNextMonth = 0;
+$regressionLine = [];
+for ($i = 0; $i < $n; $i++) {
+    $regressionLine[] = max(0, round($m * $i + $b, 2));
+}
 
 // ── Alert computations ───────────────────────────────────────────
 $alerts = [];
+
+// 0. Delinquent Tax Assessments
+$delinquentAssessments = array_filter($taxAssessments, fn($a) => strtolower($a['status'] ?? '') === 'delinquent');
+if (count($delinquentAssessments) > 0) {
+    $delinqTotal = array_sum(array_map(fn($a) => (float)($a['basic_amount'] ?? 0) + (float)($a['surcharge_amount'] ?? 0) + (float)($a['penalty_amount'] ?? 0), $delinquentAssessments));
+    $alerts[] = [
+        'level' => 'warning',
+        'icon'  => 'fa-file-invoice-dollar',
+        'msg'   => '<strong>' . count($delinquentAssessments) . ' delinquent tax assessment' . (count($delinquentAssessments) > 1 ? 's' : '') . '</strong> totaling <strong>' . $treasuryService->formatPeso($delinqTotal) . '</strong> (with 25% surcharge &amp; 2% interest) require taxpayer follow-up.',
+        'link'  => ['href' => '#delinquent-assessments-card', 'label' => 'Send Reminder →'],
+    ];
+}
 
 // 1. Low fund balance (< 15% of opening)
 foreach ($funds as $f) {
@@ -227,7 +259,29 @@ include __DIR__ . '/../../includes/sidebar.php';
             Consolidated view of daily collections, fund balances, and disbursements for the Office of the Municipal Treasurer.
           </p>
         </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" onclick="document.getElementById('metabaseModal').classList.remove('hidden')"
+            class="inline-flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-2xs">
+            <i class="fa-solid fa-chart-Simple text-indigo-600"></i>
+            <span>Metabase BI Analytics</span>
+            <span class="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[9px] font-black uppercase">OLAP</span>
+          </button>
+          <a href="reports.php" class="inline-flex items-center gap-2 bg-brand-dark hover:opacity-90 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-2xs">
+            <i class="fa-solid fa-file-chart-column"></i>
+            <span>Financial Reports</span>
+          </a>
+        </div>
       </div>
+
+      <?php if ($successMsg): ?>
+      <div class="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl p-4 text-xs font-semibold flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-envelope-circle-check text-emerald-600"></i>
+          <span><?= htmlspecialchars($successMsg) ?></span>
+        </div>
+        <button onclick="this.parentElement.remove()" class="text-emerald-400 hover:text-emerald-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <?php endif; ?>
 
       <?php if ($errorMsg): ?>
       <div class="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-xs font-medium flex items-start space-x-2">
@@ -715,6 +769,95 @@ include __DIR__ . '/../../includes/sidebar.php';
         </div>
       </div>
 
+      <!-- Unpaid & Delinquent Tax Assessments Monitor (RPT & Business Tax + Email Reminders) -->
+      <?php
+      $unpaidAssessments = array_values(array_filter($taxAssessments, fn($a) => strtolower($a['status'] ?? '') !== 'paid'));
+      ?>
+      <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs" id="delinquent-assessments-card">
+        <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm font-extrabold text-slate-800">Unpaid &amp; Delinquent Tax Assessments Monitor</h2>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700"><?= count($unpaidAssessments) ?> open</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">Real Property Tax (RPT) &amp; Business Tax assessments with statutory 25% surcharge, 2% interest, and automated SMTP taxpayer reminders.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="collection.php" class="inline-flex items-center gap-1.5 bg-brand-light hover:bg-brand-medium hover:text-white text-brand-dark border border-brand-border text-[11px] font-bold px-3 py-1.5 rounded-lg transition">
+              <i class="fa-solid fa-cash-register"></i> Open Collection Terminal
+            </a>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left text-[10px] uppercase tracking-wider text-slate-400 bg-slate-50 border-b border-slate-100">
+                <th class="px-5 py-3 font-bold">Assessment #</th>
+                <th class="px-5 py-3 font-bold">Taxpayer &amp; Email</th>
+                <th class="px-5 py-3 font-bold">Tax Type / Period</th>
+                <th class="px-5 py-3 font-bold text-right">Basic Tax</th>
+                <th class="px-5 py-3 font-bold text-right">Surcharge (25%)</th>
+                <th class="px-5 py-3 font-bold text-right">Interest (2%)</th>
+                <th class="px-5 py-3 font-bold text-right">Total Due</th>
+                <th class="px-5 py-3 font-bold text-center">Status</th>
+                <th class="px-5 py-3 font-bold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <?php foreach ($taxAssessments as $ass):
+                $st = strtolower((string) ($ass['status'] ?? 'unpaid'));
+                $basic = (float) ($ass['basic_amount'] ?? 0);
+                $sur   = (float) ($ass['surcharge_amount'] ?? 0);
+                $pen   = (float) ($ass['penalty_amount'] ?? 0);
+                $tot   = $basic + $sur + $pen;
+                $badgeCls = $st === 'paid'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : ($st === 'delinquent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700');
+              ?>
+              <tr class="hover:bg-slate-50/70 transition">
+                <td class="px-5 py-3 font-mono font-bold text-brand-dark"><?= htmlspecialchars($ass['assessment_no'] ?? '') ?></td>
+                <td class="px-5 py-3">
+                  <div class="font-semibold text-slate-800"><?= htmlspecialchars($ass['taxpayer_name'] ?? '') ?></div>
+                  <div class="text-[10px] text-slate-400 font-mono"><?= htmlspecialchars($ass['taxpayer_email'] ?? 'No email on file') ?></div>
+                </td>
+                <td class="px-5 py-3">
+                  <div class="font-medium text-slate-700"><?= htmlspecialchars($ass['tax_type'] ?? '') ?></div>
+                  <div class="text-[10px] text-slate-400">Period: <?= htmlspecialchars($ass['period_covered'] ?? '—') ?> · Due: <?= htmlspecialchars($ass['due_date'] ?? '—') ?></div>
+                </td>
+                <td class="px-5 py-3 font-mono text-right text-slate-600"><?= $treasuryService->formatPeso($basic) ?></td>
+                <td class="px-5 py-3 font-mono text-right <?= $sur > 0 ? 'text-amber-600 font-bold' : 'text-slate-400' ?>"><?= $treasuryService->formatPeso($sur) ?></td>
+                <td class="px-5 py-3 font-mono text-right <?= $pen > 0 ? 'text-rose-600 font-bold' : 'text-slate-400' ?>"><?= $treasuryService->formatPeso($pen) ?></td>
+                <td class="px-5 py-3 font-mono font-black text-right text-slate-900"><?= $treasuryService->formatPeso($tot) ?></td>
+                <td class="px-5 py-3 text-center">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase <?= $badgeCls ?>">
+                    <?= htmlspecialchars($st) ?>
+                  </span>
+                </td>
+                <td class="px-5 py-3 text-right">
+                  <?php if ($st !== 'paid'): ?>
+                  <div class="inline-flex items-center gap-1.5">
+                    <form method="post" class="inline">
+                      <input type="hidden" name="action" value="send_tax_reminder">
+                      <input type="hidden" name="assessment_id" value="<?= (int) $ass['id'] ?>">
+                      <button type="submit" class="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-bold transition" title="Send Official Billing / Overdue Email Notice">
+                        <i class="fa-solid fa-paper-plane mr-1"></i>Remind
+                      </button>
+                    </form>
+                    <a href="collection.php" class="px-2.5 py-1 rounded-lg bg-brand-dark hover:opacity-90 text-white text-[10px] font-bold transition">
+                      Collect
+                    </a>
+                  </div>
+                  <?php else: ?>
+                  <span class="text-[10px] font-bold text-emerald-600"><i class="fa-solid fa-check-circle"></i> Settled</span>
+                  <?php endif; ?>
+                </td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="bg-white border border-slate-200/80 rounded-2xl shadow-xs" id="recent-tx-card">
         <!-- Card header -->
         <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -902,9 +1045,10 @@ include __DIR__ . '/../../includes/sidebar.php';
       Chart.defaults.font.family = "'Inter', 'ui-sans-serif', system-ui, sans-serif";
       Chart.defaults.color = '#94a3b8';   // slate-400
 
-      // ── 1. 12-MONTH TREND BAR CHART ──────────────────────────────
+      // ── 1. 12-MONTH TREND BAR CHART + AI REGRESSION LINE ─────────
       const trendLabels = <?= json_encode($trendLabels) ?>;
       const trendTotals = <?= json_encode($trendTotals) ?>;
+      const regressionData = <?= json_encode($regressionLine) ?>;
 
       const trendCtx = document.getElementById('trendChart');
       if (trendCtx) {
@@ -917,16 +1061,32 @@ include __DIR__ . '/../../includes/sidebar.php';
           type: 'bar',
           data: {
             labels: trendLabels,
-            datasets: [{
-              label: 'Collections',
-              data: trendTotals,
-              backgroundColor: barGrad,
-              borderColor: 'rgba(23, 107, 135, 0.9)',
-              borderWidth: 0,
-              borderRadius: 6,
-              borderSkipped: false,
-              hoverBackgroundColor: 'rgba(23, 107, 135, 1)',
-            }]
+            datasets: [
+              {
+                label: 'Collections',
+                data: trendTotals,
+                backgroundColor: barGrad,
+                borderColor: 'rgba(23, 107, 135, 0.9)',
+                borderWidth: 0,
+                borderRadius: 6,
+                borderSkipped: false,
+                hoverBackgroundColor: 'rgba(23, 107, 135, 1)',
+                order: 2,
+              },
+              {
+                type: 'line',
+                label: 'AI Linear Regression Trend',
+                data: regressionData,
+                borderColor: '#f59e0b',
+                borderWidth: 2,
+                borderDash: [5, 5],
+                pointRadius: 2.5,
+                pointBackgroundColor: '#f59e0b',
+                tension: 0.25,
+                fill: false,
+                order: 1,
+              }
+            ]
           },
           options: {
             responsive: true,
@@ -1215,6 +1375,12 @@ include __DIR__ . '/../../includes/sidebar.php';
             <span class="text-slate-500">Source:</span>
             <span class="font-semibold text-slate-700">${receipt.revenue_source}</span>
           </div>
+          ${(parseFloat(receipt.surcharge_amount || 0) > 0 || parseFloat(receipt.penalty_amount || 0) > 0) ? `
+          <div class="bg-white border border-slate-200 rounded-lg p-2.5 space-y-1 text-xs">
+            <div class="flex justify-between text-slate-500"><span>Basic Tax / Principal:</span><span class="font-mono">${formatPeso(receipt.basic_amount || receipt.amount)}</span></div>
+            <div class="flex justify-between text-amber-600"><span>Surcharge (25%):</span><span class="font-mono">+${formatPeso(receipt.surcharge_amount || 0)}</span></div>
+            <div class="flex justify-between text-rose-600"><span>Interest / Penalty (2%):</span><span class="font-mono">+${formatPeso(receipt.penalty_amount || 0)}</span></div>
+          </div>` : ''}
           <div class="flex justify-between">
             <span class="text-slate-500">Amount:</span>
             <span class="font-mono font-bold text-brand-dark text-lg">${formatPeso(receipt.amount)}</span>
@@ -1422,4 +1588,88 @@ include __DIR__ . '/../../includes/sidebar.php';
       filterFundLedger();
     }
     </script>
+
+    <!-- Metabase Business Intelligence (BI) & Predictive Analytics Modal -->
+    <?php $metabaseEmbedUrl = trim((string) (getenv('METABASE_EMBED_URL') ?: ($_ENV['METABASE_EMBED_URL'] ?? ''))); ?>
+    <div id="metabaseModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 hidden">
+      <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-900 text-white rounded-t-2xl">
+          <div class="flex items-center gap-3">
+            <div class="h-10 w-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+              <i class="fa-solid fa-chart-pie text-lg"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-sm font-black tracking-tight">Metabase Business Intelligence (BI) &amp; OLAP Analytics</h3>
+                <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">Zero-ETL Connected</span>
+              </div>
+              <p class="text-[11px] text-slate-400">Caloocan City Hall Revenue Collection &amp; Treasury Executive Analytics Engine</p>
+            </div>
+          </div>
+          <button type="button" onclick="document.getElementById('metabaseModal').classList.add('hidden')" class="text-slate-400 hover:text-white h-8 w-8 rounded-lg flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="p-6 space-y-5">
+          <?php if ($metabaseEmbedUrl !== ''): ?>
+          <div class="rounded-xl overflow-hidden border border-slate-200 bg-slate-50" style="height: 520px;">
+            <iframe src="<?= htmlspecialchars($metabaseEmbedUrl) ?>" class="w-full h-full border-0" allowfullscreen></iframe>
+          </div>
+          <?php else: ?>
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">AI Next-Month Forecast</span>
+              <p class="text-lg font-black text-indigo-700 font-mono mt-1"><?= $treasuryService->formatPeso($predictedNextMonth) ?></p>
+              <span class="text-[10px] text-slate-500">Linear Regression (12-mo)</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Total Surcharges &amp; Interest</span>
+              <?php
+                $totalSurchargesCollected = array_sum(array_map(fn($c) => (float)($c['surcharge_amount'] ?? 0) + (float)($c['penalty_amount'] ?? 0), $allCollections));
+              ?>
+              <p class="text-lg font-black text-amber-600 font-mono mt-1"><?= $treasuryService->formatPeso($totalSurchargesCollected) ?></p>
+              <span class="text-[10px] text-slate-500">Statutory 25% + 2%/mo</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Market Stall Occupancy</span>
+              <?php
+                $occCount = count(array_filter($marketStalls, fn($s) => strtolower($s['occupancy_status'] ?? '') === 'occupied'));
+                $totStalls = max(1, count($marketStalls));
+              ?>
+              <p class="text-lg font-black text-emerald-700 font-mono mt-1"><?= $occCount ?> / <?= count($marketStalls) ?> (<?= round(($occCount / $totStalls) * 100) ?>%)</p>
+              <span class="text-[10px] text-slate-500">Public Market Ledger</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Open Delinquencies</span>
+              <p class="text-lg font-black text-rose-600 font-mono mt-1"><?= count($delinquentAssessments) ?> Accounts</p>
+              <span class="text-[10px] text-slate-500">RPT &amp; Business Tax</span>
+            </div>
+          </div>
+
+          <div class="bg-indigo-50/60 border border-indigo-200/80 rounded-xl p-4 text-xs text-slate-700 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-black text-indigo-950"><i class="fa-solid fa-database mr-1.5 text-indigo-600"></i>Metabase Direct MySQL OLAP Data Marts</span>
+              <span class="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-indigo-200 text-indigo-700">Schema: Treasury v3.0</span>
+            </div>
+            <p class="text-[11px] text-slate-600 leading-relaxed">
+              Metabase BI connects directly to the live relational tables (<code class="font-mono bg-white px-1 rounded">tr_collections</code>, <code class="font-mono bg-white px-1 rounded">tr_funds</code>, <code class="font-mono bg-white px-1 rounded">tr_fund_ledger</code>, <code class="font-mono bg-white px-1 rounded">tr_tax_assessments</code>, <code class="font-mono bg-white px-1 rounded">tr_market_stalls</code>, and <code class="font-mono bg-white px-1 rounded">tr_vouchers</code>). Set <code class="font-mono bg-white px-1 rounded">METABASE_EMBED_URL</code> in <code class="font-mono bg-white px-1 rounded">.env</code> to render an external Metabase iframe, or export the live OLAP dataset below.
+            </p>
+          </div>
+          <?php endif; ?>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <span class="text-[11px] text-slate-400">Real-time synchronization with Treasury Cashflow &amp; Assessment Ledgers</span>
+            <div class="flex items-center gap-2">
+              <a href="download-financial-report.php" download class="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-lg text-xs transition">
+                <i class="fa-solid fa-file-csv"></i> Export BI Dataset
+              </a>
+              <button type="button" onclick="document.getElementById('metabaseModal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
