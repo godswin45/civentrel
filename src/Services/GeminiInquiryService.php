@@ -212,11 +212,11 @@ class GeminiInquiryService
             ];
         }
 
-        // Detect category and extract live database context (RAG)
-        $category = $this->detectCategory($question);
-        $ragContext = $this->buildLiveDatabaseContext($question, $accountRef, $citizenId, $senderName);
+        // Detect category and extract live database context (RAG) with multi-turn history
+        $category = $this->detectCategory($question, $history);
+        $ragContext = $this->buildLiveDatabaseContext($question, $accountRef, $citizenId, $senderName, $history);
 
-        // Call live Gemini REST API if key is configured, else use intent-aware Live-DB RAG engine
+        // Call live Gemini REST API if key is configured, else use conversational Live-DB RAG engine
         $modelUsed = $this->model;
         $answer = null;
 
@@ -229,10 +229,10 @@ class GeminiInquiryService
         }
 
         if ($answer === null) {
-            $answer = $this->generateLiveRagResponse($question, $ragContext, $language, $category);
+            $answer = $this->generateLiveRagResponse($question, $ragContext, $language, $category, $history);
             $modelUsed = $this->apiKey !== ''
                 ? 'Caloocan Treasury AI Engine (Gemini Fallback + Live DB RAG)'
-                : 'Caloocan Treasury AI Engine (Live DB RAG)';
+                : 'Caloocan Treasury AI Engine (Conversational Live DB RAG)';
         }
 
         $elapsedMs = (int) round((microtime(true) - $startTime) * 1000);
@@ -431,17 +431,19 @@ class GeminiInquiryService
      * Query the live database (`tr_tax_assessments`, `tr_market_stalls`, `tr_collections`, `tr_funds`)
      * to provide real-time RAG grounding for both Gemini and the local fallback engine.
      */
-    private function buildLiveDatabaseContext(string $question, string $accountRef, string $citizenId, string $senderName): array
+    private function buildLiveDatabaseContext(string $question, string $accountRef, string $citizenId, string $senderName, array $history = []): array
     {
         $matchedRef = null;
         $matchedRecord = null;
+        $matchedFromHistory = false;
         $lines = [];
 
         if (!$this->pdo) {
             return [
-                'context_text'      => 'Database connection unavailable.',
-                'matched_reference' => null,
-                'matched_record'    => null,
+                'context_text'         => 'Database connection unavailable.',
+                'matched_reference'    => null,
+                'matched_record'       => null,
+                'matched_from_history' => false,
             ];
         }
 
@@ -450,7 +452,7 @@ class GeminiInquiryService
             $assessments = $repo->getAllTaxAssessments();
             $stalls = $repo->getAllMarketStalls();
 
-            // 1. Check if question or accountRef mentions an Assessment No (e.g. RPT-2026-001, BIZ-2026-001, TA-2026-102)
+            // 1. Check if current question or accountRef mentions an Assessment No (e.g. RPT-2026-001, BIZ-2026-001, TA-2026-102)
             $combined = $question . ' ' . $accountRef . ' ' . $senderName;
 
             foreach ($assessments as $ass) {
@@ -494,6 +496,35 @@ class GeminiInquiryService
                 if ($orRow) {
                     $matchedRef = $orCode;
                     $matchedRecord = ['type' => 'collection', 'data' => $orRow];
+                }
+            }
+
+            // 4. Multi-turn conversational memory: if current turn didn't explicitly repeat the code,
+            // check recent conversation history so follow-ups ("bakit may surcharge yan?", "paano ko babayaran?") know which record is active!
+            if (!$matchedRecord && !empty($history)) {
+                $recentHistoryText = '';
+                foreach (array_reverse(array_slice($history, -4)) as $turn) {
+                    $recentHistoryText .= ' ' . ($turn['content'] ?? $turn['text'] ?? '');
+                }
+                foreach ($assessments as $ass) {
+                    $assNo = (string) ($ass['assessment_no'] ?? '');
+                    if ($assNo !== '' && stripos($recentHistoryText, $assNo) !== false) {
+                        $matchedRef = $assNo;
+                        $matchedRecord = ['type' => 'tax_assessment', 'data' => $ass];
+                        $matchedFromHistory = true;
+                        break;
+                    }
+                }
+                if (!$matchedRecord) {
+                    foreach ($stalls as $st) {
+                        $stNo = (string) ($st['stall_number'] ?? '');
+                        if ($stNo !== '' && preg_match('/\b' . preg_quote($stNo, '/') . '\b/i', $recentHistoryText)) {
+                            $matchedRef = $stNo;
+                            $matchedRecord = ['type' => 'market_stall', 'data' => $st];
+                            $matchedFromHistory = true;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -554,38 +585,126 @@ class GeminiInquiryService
         }
 
         return [
-            'context_text'      => implode("\n\n", $lines),
-            'matched_reference' => $matchedRef,
-            'matched_record'    => $matchedRecord,
-            'assessments'       => $assessments ?? [],
-            'stalls'            => $stalls ?? [],
-            'funds'             => $funds ?? [],
+            'context_text'         => implode("\n\n", $lines),
+            'matched_reference'    => $matchedRef,
+            'matched_record'       => $matchedRecord,
+            'matched_from_history' => $matchedFromHistory,
+            'assessments'          => $assessments ?? [],
+            'stalls'               => $stalls ?? [],
+            'funds'                => $funds ?? [],
         ];
     }
 
     /**
-     * Dynamic Live-DB RAG Response Generator (used when GEMINI_API_KEY is not yet set or offline).
-     * Queries the live database records and computes exact tax breakdowns in English or Tagalog.
+     * Dynamic Multi-Turn Conversational Live-DB RAG Response Generator
+     * (used when GEMINI_API_KEY is not yet set or offline).
+     * Tracks multi-turn conversation history, active taxpayer assessments/stalls, and follow-up intents
+     * in English, Tagalog, and Taglish.
      */
-    private function generateLiveRagResponse(string $question, array $ragContext, string $language, string $category): string
+    private function generateLiveRagResponse(string $question, array $ragContext, string $language, string $category, array $history = []): string
     {
-        $qLower = strtolower($question);
+        $qLower = strtolower(trim($question));
+        $recentHistoryText = '';
+        foreach (array_slice($history, -4) as $turn) {
+            $recentHistoryText .= ' ' . ($turn['content'] ?? $turn['text'] ?? '');
+        }
         $isTagalog = $language === 'tl'
             || (
                 $language !== 'en'
-                && preg_match('/\b(magkano|paano|pano|panu|kailan|kelan|saan|san|ano|anu|bakit|po|opo|ba|kung|gusto|ko|ako|mag|nag|ng|mga|bago|bagong|bayad|magbayad|amilyar|pwesto|palengke|negosyo|cedula|sedula|sara|isara|kumuha|pwede|puwede|para|sa|yung|ung)\b/i', $question)
+                && (
+                    preg_match('/\b(magkano|paano|pano|panu|kailan|kelan|saan|san|ano|anu|bakit|po|opo|ba|kung|gusto|ko|ako|mag|nag|ng|mga|bago|bagong|bayad|magbayad|babayaran|amilyar|pwesto|palengke|negosyo|cedula|sedula|sara|isara|kumuha|pwede|puwede|para|sa|yung|ung|yan|iyan|ito|gaano|katagal|salamat|maraming|oo|hindi|eh|pag|kapag)\b/i', $question)
+                    || ($recentHistoryText !== '' && preg_match('/\b(po|opo|narito|hakbang|kabuuang|maaari)\b/i', $recentHistoryText))
+                )
             );
 
-        $matched = $ragContext['matched_record'] ?? null;
+        $matched            = $ragContext['matched_record'] ?? null;
+        $matchedFromHistory = (bool) ($ragContext['matched_from_history'] ?? false);
+        $hasHistory         = !empty($history);
 
-        // 1. If a specific Tax Assessment was matched in the live database
+        // 0. Conversational Gratitude / Acknowledgement ("salamat", "thank you", "ok gets ko na", "noted")
+        if (preg_match('/^(thank you|thanks|maraming salamat|salamat|thank u|ty|ok|okay|gets|gets ko na|noted|sige|sige po|opo salamat|clear na)[\s!.,?po]*$/i', $qLower)) {
+            if ($isTagalog) {
+                return "Walang anuman po! Masaya akong makatulong sa inyong transaksyon sa **Caloocan City Treasurer's Office**.\n\n"
+                    . "May iba pa po ba kayong gustong itanong tungkol sa inyong **Business Permit, Real Property Tax (Amilyar), Market Stall, o Online Payment**? I-type lang po ninyo rito at sasagutin ko agad!";
+            }
+            return "You're very welcome! I'm glad I could help with your **Caloocan City Treasury** inquiry.\n\n"
+                . "Is there anything else you'd like to ask about **Business Permits, Real Property Tax (RPT), Market Stalls, or Online Payments**? Feel free to continue our chat anytime!";
+        }
+
+        // 0b. Pure Conversational Greeting ("hi", "hello", "good morning", "magandang araw", "pwede magtanong")
+        if (preg_match('/^(hi|hello|hey|good morning|good afternoon|good evening|magandang araw|magandang umaga|magandang hapon|kumusta|kamusta|pwede magtanong|pwede po magtanong|ask lang|tanong lang)[\s!.,?po]*$/i', $qLower)) {
+            if ($isTagalog) {
+                return "Magandang araw po! 👋 Ako ang inyong **Caloocan City Treasury Conversational AI Assistant**.\n\n"
+                    . "Pwede tayong mag-usap nang tuloy-tuloy sa **Tagalog, Taglish, o English**! Ano po ang maitutulong ko sa inyo ngayon?\n"
+                    . "- 🏢 **Pagpaparehistro ng Bagong Negosyo o Renewal ng Mayor's Permit**\n"
+                    . "- 🏠 **Pag-check ng Real Property Tax (Amilyar) o Penalty** (hal. `RPT-2026-001`)\n"
+                    . "- 🏪 **Public Market Stall Rental at Bakanteng Pwesto** (hal. `A-03`)\n"
+                    . "- 💳 **Pagbabayad Online via GCash / Maya**\n\n"
+                    . "*Ano po ang gusto ninyong unahin nating pag-usapan?*";
+            }
+            return "Hello and welcome! 👋 I am your **Caloocan City Hall Treasury Conversational AI Assistant**.\n\n"
+                . "We can have a back-and-forth conversation in **English, Tagalog, or Taglish**! What would you like help with today?\n"
+                . "- 🏢 **Registering a New Business Name or Renewing a Mayor's Permit**\n"
+                . "- 🏠 **Checking a Real Property Tax (RPT) or Business Tax Assessment** (e.g., `RPT-2026-001`, `BIZ-2026-001`)\n"
+                . "- 🏪 **Public Market Stall Availability & Monthly Rates** (e.g., `A-03`)\n"
+                . "- 💳 **Paying Taxes Online via GCash, Maya, or Card**\n\n"
+                . "*Tell me what you need and we'll go through it step by step!*";
+        }
+
+        // 1. If a specific Tax Assessment is active (either mentioned now OR remembered from previous chat turn!)
         if ($matched && $matched['type'] === 'tax_assessment') {
-            $a     = $matched['data'];
-            $basic = (float) ($a['basic_amount'] ?? $a['tax_due'] ?? 0);
-            $sur   = (float) ($a['surcharge_amount'] ?? 0);
-            $pen   = (float) ($a['penalty_amount'] ?? 0);
-            $total = $basic + $sur + $pen;
+            $a      = $matched['data'];
+            $basic  = (float) ($a['basic_amount'] ?? $a['tax_due'] ?? 0);
+            $sur    = (float) ($a['surcharge_amount'] ?? 0);
+            $pen    = (float) ($a['penalty_amount'] ?? 0);
+            $total  = $basic + $sur + $pen;
             $status = strtoupper((string) ($a['status'] ?? 'UNPAID'));
+
+            // Check if the user is asking a conversational FOLLOW-UP about this assessment
+            // e.g. "bakit may surcharge/penalty?", "paano ko babayaran yan?", "pwede ba installment/discount?"
+            if ($matchedFromHistory || preg_match('/(bakit|why|paano|pano|panu|how|online|gcash|maya|discount|installment|hulugan|bawas|waive|kelan|kailan|when)/i', $question)) {
+                if (preg_match('/(bakit|why|surcharge|penalty|interest|patong|laki|mahal)/i', $question)) {
+                    if ($isTagalog) {
+                        return "Tungkol po sa tinatanong ninyong Assessment **#{$a['assessment_no']} ({$a['taxpayer_name']})**:\n\n"
+                            . ($sur > 0 || $pen > 0
+                                ? "Nagkaroon po ito ng karagdagang **₱" . number_format($sur, 2) . " (25% Surcharge)** at **₱" . number_format($pen, 2) . " (2% Monthly Interest)** dahil lumagpas na po ito sa takdang Due Date na **{$a['due_date']}**.\n\n"
+                                  . "Alinsunod po sa **Section 255 ng Local Government Code (RA 7160)**, awtomatikong ipinapataw ang:\n"
+                                  . "- **25% One-Time Surcharge** sa Basic Tax na ₱" . number_format($basic, 2) . "\n"
+                                  . "- **2% Interest kada buwan** ng pagkaantala hanggang mabayaran.\n\n"
+                                  . "💬 *Gusto po ba ninyong malaman kung paano ito babayaran online para hindi na madagdagan ang buwanang 2% interest?*"
+                                : "Magandang balita po! **Wala pong surcharge o penalty (₱0.00)** ang Assessment **#{$a['assessment_no']}** dahil hindi pa ito lampas sa due date ({$a['due_date']}) o bayad na. Ang Basic Tax lamang na **₱" . number_format($basic, 2) . "** ang nakatala.\n\n"
+                                  . "💬 *May iba pa po ba kayong gustong i-check sa account na ito?*");
+                    }
+                    return "Regarding Assessment **#{$a['assessment_no']} ({$a['taxpayer_name']})** from our conversation:\n\n"
+                        . ($sur > 0 || $pen > 0
+                            ? "It has a **₱" . number_format($sur, 2) . " (25% Surcharge)** and **₱" . number_format($pen, 2) . " (2% Monthly Interest)** because the due date (**{$a['due_date']}**) has passed.\n\n"
+                              . "Under **Section 255 of the Local Government Code (RA 7160)**:\n"
+                              . "- A **25% one-time surcharge** is applied to the unpaid Basic Tax (₱" . number_format($basic, 2) . ").\n"
+                              . "- A **2% monthly interest** accrues for each month of delinquency.\n\n"
+                              . "💬 *Would you like instructions on how to pay this online via GCash or Maya so no further monthly interest accrues?*"
+                            : "Good news! Assessment **#{$a['assessment_no']}** currently has **₱0.00 surcharge and ₱0.00 penalty** because it is within the due date ({$a['due_date']}). Only the Basic Tax of **₱" . number_format($basic, 2) . "** applies.\n\n"
+                              . "💬 *Would you like to know how to settle this online or check another assessment?*");
+                }
+
+                if (preg_match('/(paano|pano|panu|how|saan|where|bayad|pay|gcash|maya|online)/i', $question)) {
+                    if ($isTagalog) {
+                        return "Para po mabayaran ang **₱" . number_format($total, 2) . "** ng Assessment **#{$a['assessment_no']} ({$a['taxpayer_name']})**, may **2 paraan** po kayo:\n\n"
+                            . "1. **Online via Citizen Portal (GCash / Maya / Card):**\n"
+                            . "   - Mag-login sa Citizen Portal, piliin ang reference number na **`{$a['assessment_no']}`**, at bayaran ang **₱" . number_format($total, 2) . "**.\n"
+                            . "   - Awtomatikong lalabas ang inyong **Electronic Official Receipt (`OR-2026-...`)**.\n"
+                            . "2. **Walk-In sa Caloocan City Hall (City Treasurer's Office):**\n"
+                            . "   - Ipakita lamang ang Assessment No. **`{$a['assessment_no']}`** o TD/Permit No. **`{$a['td_or_permit_no']}`** sa Revenue Collection Counter.\n\n"
+                            . "💬 *Gusto po ba ninyong mag-check pa ng ibang assessment o may tanong pa kayo tungkol sa resibo?*";
+                    }
+                    return "To settle the **₱" . number_format($total, 2) . "** total due for Assessment **#{$a['assessment_no']} ({$a['taxpayer_name']})**, you have **2 convenient options**:\n\n"
+                        . "1. **Pay Online (GCash, Maya, or Debit/Credit Card):**\n"
+                        . "   - Open the Citizen Payment Portal, enter Assessment Reference **`{$a['assessment_no']}`**, and complete the PayMongo checkout for **₱" . number_format($total, 2) . "**.\n"
+                        . "   - Your **Electronic Official Receipt (`OR-2026-...`)** will be issued immediately.\n"
+                        . "2. **Over-the-Counter at Caloocan City Hall:**\n"
+                        . "   - Present Assessment No. **`{$a['assessment_no']}`** or TD/Permit No. **`{$a['td_or_permit_no']}`** at the City Treasurer's Office Collection Window.\n\n"
+                        . "💬 *Do you have any other questions about this payment, or would you like to inspect another account?*";
+                }
+            }
 
             if ($isTagalog) {
                 return "Narito po ang live record mula sa **Caloocan City Treasury Database** para sa Assessment **#{$a['assessment_no']}**:\n\n"
@@ -598,8 +717,8 @@ class GeminiInquiryService
                     . "- **Kabuuang Babayaran (Total Due):** **₱" . number_format($total, 2) . "**\n"
                     . "- **Due Date:** {$a['due_date']} · **Status:** **{$status}**\n\n"
                     . ($status === 'PAID'
-                        ? "✅ Ang account na ito ay **bayad na (Settled)**."
-                        : "💡 Maaari po kayong magbayad online gamit ang **GCash, Maya, o Card** sa Citizen Portal o direkta sa Treasury Collection Terminal.");
+                        ? "✅ Ang account na ito ay **bayad na (Settled)**.\n\n💬 *May iba pa po ba kayong gustong i-check na assessment o itanong tungkol sa resibo nito?*"
+                        : "💡 Maaari po kayong magbayad online gamit ang **GCash, Maya, o Card**.\n\n💬 *Pwede ninyo akong tanungin: \"Bakit may surcharge yan?\" o \"Paano ko babayaran yan online?\"*");
             }
 
             return "Here is the live record from the **Caloocan City Treasury Database** for Assessment **#{$a['assessment_no']}**:\n\n"
@@ -612,11 +731,11 @@ class GeminiInquiryService
                 . "- **Total Amount Due:** **₱" . number_format($total, 2) . "**\n"
                 . "- **Due Date:** {$a['due_date']} · **Status:** **{$status}**\n\n"
                 . ($status === 'PAID'
-                    ? "✅ This assessment is already **PAID / Settled**."
-                    : "💡 You may settle this online via **GCash, Maya, or Debit/Credit Card** through the Citizen Payment Portal or at the City Treasurer's Office.");
+                    ? "✅ This assessment is already **PAID / Settled**.\n\n💬 *Would you like to check another assessment number or ask a follow-up question?*"
+                    : "💡 You may settle this online via **GCash, Maya, or Debit/Credit Card**.\n\n💬 *You can ask me follow-up questions like: \"Why does this have a surcharge?\" or \"How do I pay this online?\"*");
         }
 
-        // 2. If a specific Market Stall was matched in the live database
+        // 2. If a specific Market Stall was matched (now or from history)
         if ($matched && $matched['type'] === 'market_stall') {
             $s    = $matched['data'];
             $rate = (float) ($s['monthly_rate'] ?? $s['monthly_fee'] ?? 0);
@@ -624,13 +743,35 @@ class GeminiInquiryService
             $lateSurcharge = round($rate * 0.25, 2);
             $lateTotal     = $rate + $lateSurcharge;
 
+            if ($matchedFromHistory && preg_match('/(paano|pano|panu|how|apply|rent|upa|requirements|bayad|pay)/i', $question)) {
+                if ($isTagalog) {
+                    return "Tungkol po sa **Market Stall #{$s['stall_number']} ({$s['section']})** na pinag-uusapan natin:\n\n"
+                        . ($occ === 'VACANT'
+                            ? "Dahil **VACANT (Bakante)** po ang Stall **#{$s['stall_number']}** (₱" . number_format($rate, 2) . "/buwan), maaari po kayong mag-apply sa **Market Administration & City Treasurer's Office**:\n"
+                              . "1. Magdala ng **Barangay Clearance**, **Cedula**, at **2x2 ID Picture**.\n"
+                              . "2. Pumirma ng **Market Stall Lease Contract** at bayaran ang unang buwanang upa na **₱" . number_format($rate, 2) . "**.\n\n"
+                              . "💬 *Gusto po ba ninyong malaman ang iba pang bakanteng stall sa palengke?*"
+                            : "Ang Stall **#{$s['stall_number']}** ay kasalukuyang nakapangalan kay **{$s['vendor_name']}** (**{$occ}**). Maaaring bayaran ang buwanang upa na **₱" . number_format($rate, 2) . "** bago mag-ika-20 ng buwan sa Treasury Counter o Online.\n\n"
+                              . "💬 *Gusto po ba ninyong makita kung aling mga stall ang bakante (vacant) ngayon?*");
+                }
+                return "Regarding **Market Stall #{$s['stall_number']} ({$s['section']})** from our chat:\n\n"
+                    . ($occ === 'VACANT'
+                        ? "Since Stall **#{$s['stall_number']}** is currently **VACANT** (₱" . number_format($rate, 2) . "/month), you can apply for it at the **Market Administration & City Treasurer's Office**:\n"
+                          . "1. Submit a **Barangay Clearance**, **Community Tax Certificate (Cedula)**, and **Valid ID**.\n"
+                          . "2. Sign the **Market Stall Lease Agreement** and pay the monthly rental of **₱" . number_format($rate, 2) . "**.\n\n"
+                          . "💬 *Would you like to see what other stalls are currently vacant?*"
+                        : "Stall **#{$s['stall_number']}** is currently assigned to **{$s['vendor_name']}** (**{$occ}**). The monthly rental of **₱" . number_format($rate, 2) . "** can be paid before the 20th of the month.\n\n"
+                          . "💬 *Would you like me to list the vacant stalls available for lease?*");
+            }
+
             if ($isTagalog) {
                 return "Narito po ang live status ng **Market Stall #{$s['stall_number']} ({$s['section']})**:\n\n"
                     . "- **Nakatalagang Vendor:** " . ($s['vendor_name'] ?: 'Vacant / Available') . "\n"
                     . "- **Occupancy Status:** **{$occ}**\n"
                     . "- **Buwanang Upa (Monthly Rental):** **₱" . number_format($rate, 2) . "**\n"
                     . "- **Huling Petsa ng Bayad:** " . ($s['last_payment_date'] ?: 'Wala pang record ngayong buwan') . "\n"
-                    . "- **Cutoff Date:** Tuwing **ika-20 ng buwan** (Kapag lumagpas, may **25% surcharge** na ₱" . number_format($lateSurcharge, 2) . " → Kabuuang **₱" . number_format($lateTotal, 2) . "**).";
+                    . "- **Cutoff Date:** Tuwing **ika-20 ng buwan** (Kapag lumagpas, may **25% surcharge** na ₱" . number_format($lateSurcharge, 2) . " → Kabuuang **₱" . number_format($lateTotal, 2) . "**).\n\n"
+                    . "💬 *May gusto po ba kayong itanong tungkol sa pagbabayad o pag-apply sa stall na ito?*";
             }
 
             return "Here is the live ledger status for **Market Stall #{$s['stall_number']} ({$s['section']})**:\n\n"
@@ -638,7 +779,8 @@ class GeminiInquiryService
                 . "- **Occupancy Status:** **{$occ}**\n"
                 . "- **Monthly Rental Rate:** **₱" . number_format($rate, 2) . "**\n"
                 . "- **Last Payment Date:** " . ($s['last_payment_date'] ?: 'No recent payment recorded') . "\n"
-                . "- **Payment Cutoff:** **20th of the month** (Late payments after the 20th incur a **25% surcharge** of ₱" . number_format($lateSurcharge, 2) . ", totaling **₱" . number_format($lateTotal, 2) . "**).";
+                . "- **Payment Cutoff:** **20th of the month** (Late payments after the 20th incur a **25% surcharge** of ₱" . number_format($lateSurcharge, 2) . ", totaling **₱" . number_format($lateTotal, 2) . "**).\n\n"
+                . "💬 *Feel free to ask a follow-up question about how to apply for or pay this stall!*";
         }
 
         // 3. If an Official Receipt (OR) was matched
@@ -650,49 +792,131 @@ class GeminiInquiryService
                 . "- **Basic Amount:** ₱" . number_format((float) ($c['basic_amount'] ?? $c['amount']), 2) . "\n"
                 . "- **Surcharge / Penalty:** ₱" . number_format((float) ($c['surcharge_amount'] ?? 0) + (float) ($c['penalty_amount'] ?? 0), 2) . "\n"
                 . "- **Total Paid:** **₱" . number_format((float) $c['amount'], 2) . "**\n"
-                . "- **Payment Mode:** " . strtoupper((string) $c['payment_mode']) . " · **Date:** {$c['created_at']}";
+                . "- **Payment Mode:** " . strtoupper((string) $c['payment_mode']) . " · **Date:** {$c['created_at']}\n\n"
+                . "💬 *Do you need any other details about this Official Receipt?*";
         }
 
-        // 4. If user includes a custom peso amount to compute surcharge/penalty (e.g., "compute surcharge for 15000")
+        // 4. Custom peso amount computation (even in follow-ups like "eh kung 25000?" or "paano pag 50000 ang puhunan/tax?")
         if (preg_match('/(\d[\d,]*(\.\d+)?)/', str_replace(',', '', $question), $numMatch)) {
             $val = (float) $numMatch[1];
-            if ($val >= 100 && $val != 2026 && (strpos($qLower, 'compute') !== false || strpos($qLower, 'surcharge') !== false || strpos($qLower, 'penalty') !== false || strpos($qLower, 'kwenta') !== false)) {
+            if ($val >= 100 && $val != 2026 && (
+                preg_match('/(compute|surcharge|penalty|kwenta|kalkula|interes|late|eh kung|paano pag|pano pag|what if|how about)/i', $qLower)
+                || ($hasHistory && preg_match('/(surcharge|penalty|komputasyon|computation)/i', $recentHistoryText))
+            )) {
                 $sur = round($val * 0.25, 2);
                 $pen = round($val * 0.02, 2);
                 $tot = $val + $sur + $pen;
                 if ($isTagalog) {
-                    return "### Komputasyon ng Penalty at Surcharge (RA 7160 / Caloocan Revenue Code)\n\n"
+                    return "### Komputasyon ng Penalty at Surcharge para sa ₱" . number_format($val, 2) . "\n\n"
                         . "- **Basic Tax / Principal:** ₱" . number_format($val, 2) . "\n"
                         . "- **25% Statutory Surcharge (One-Time Late Penalty):** ₱" . number_format($sur, 2) . "\n"
                         . "- **2% Monthly Interest (1 Buwan):** ₱" . number_format($pen, 2) . "\n"
                         . "- **Kabuuang Babayaran (Total Due):** **₱" . number_format($tot, 2) . "**\n\n"
-                        . "*Paalala: Alinsunod sa Sec. 255 ng Local Government Code, ang 2% monthly interest ay nadadagdagan kada buwan ng pagkaantala hanggang 36 buwan (72%).*";
+                        . "*Paalala: Kung umabot ng 2 buwan ang delay, magiging 4% (₱" . number_format(round($val * 0.04, 2), 2) . ") ang interest.*\n\n"
+                        . "💬 *May iba pa po ba kayong halaga na gustong ipag-compute o tanong tungkol dito?*";
                 }
-                return "### Statutory Tax Breakdown Computation (RA 7160 / Caloocan Revenue Code)\n\n"
+                return "### Statutory Tax Breakdown Computation for ₱" . number_format($val, 2) . "\n\n"
                     . "- **Basic Tax / Principal:** ₱" . number_format($val, 2) . "\n"
                     . "- **25% Statutory Surcharge (One-Time Late Penalty):** ₱" . number_format($sur, 2) . "\n"
                     . "- **2% Monthly Interest (1 Month):** ₱" . number_format($pen, 2) . "\n"
                     . "- **Total Amount Due:** **₱" . number_format($tot, 2) . "**\n\n"
-                    . "*Note: Under Section 255 of the Local Government Code, the 2% monthly interest accumulates for each month of delinquency up to a maximum of 36 months (72%).*";
+                    . "*Note: If delayed for 2 months, the 2% monthly interest becomes 4% (₱" . number_format(round($val * 0.04, 2), 2) . ").*\n\n"
+                    . "💬 *Would you like me to compute another amount or check a specific assessment?*";
             }
         }
 
-        // 5. Intent-aware responses for Business Registration vs Renewal vs Retirement
+        // 5. Multi-turn Conversational Follow-Ups on Business Registration / Permits / RPT
+        // e.g. After asking how to register a business, user asks:
+        // "magkano ang babayaran?", "gaano katagal?", "saan po yan?", "ano yung DTI / step 1?", "pwede ba online?"
+        if ($hasHistory && $category === 'Business Tax & Permits') {
+            if (preg_match('/(magkano|how much|cost|fee|bayad|babayaran|presyo|rate)/i', $question)) {
+                if ($isTagalog) {
+                    return "Tungkol po sa **gastos at babayaran sa pag-register ng Business Name at Mayor's Permit**:\n\n"
+                        . "1. **DTI Business Name Registration Fee:**\n"
+                        . "   - **Barangay Scope:** ₱200 + ₱30 Documentary Stamp Tax (DST)\n"
+                        . "   - **City / Municipality Scope (Caloocan):** ₱500 + ₱30 DST\n"
+                        . "   - **Regional Scope:** ₱1,000 + ₱30 DST\n"
+                        . "   - **National Scope:** ₱2,000 + ₱30 DST\n"
+                        . "2. **Caloocan City Hall (Mayor's Permit & Treasury Fees):**\n"
+                        . "   - **Initial Business Tax:** Karaniwang **1/20 ng 1% (0.05%) ng inyong Paid-Up Capital / Puhunan** para sa bagong negosyo (o base sa Gross Sales kapag renewal).\n"
+                        . "   - **Regulatory Fees:** Mayor's Permit Fee, Sanitary Fee, Garbage Fee, Zoning Fee, at Fire Safety Inspection Fee (karaniwang nasa **₱1,500 hanggang ₱5,000+** depende sa laki at uri ng negosyo).\n\n"
+                        . "💬 *Magkano po ba ang tinatayang puhunan (capital) o anong klaseng negosyo ang itatayo ninyo para mabigyan ko kayo ng mas eksaktong estimate?*";
+                }
+                return "Regarding the **costs and fees for Business Name & Mayor's Permit registration**:\n\n"
+                    . "1. **DTI Business Name Registration Fee:**\n"
+                    . "   - **Barangay Scope:** ₱200 + ₱30 Documentary Stamp Tax (DST)\n"
+                    . "   - **City / Municipality Scope (Caloocan):** ₱500 + ₱30 DST\n"
+                    . "   - **Regional Scope:** ₱1,000 + ₱30 DST | **National:** ₱2,000 + ₱30 DST\n"
+                    . "2. **Caloocan City Treasury & BPLO Fees:**\n"
+                    . "   - **Initial Business Tax:** Based on your **Initial Capital Investment** (or Gross Sales for renewals).\n"
+                    . "   - **Regulatory Fees:** Mayor's Permit, Sanitary, Zoning, Garbage, and Fire Safety Inspection Fee (typically **₱1,500 to ₱5,000+** depending on business size and category).\n\n"
+                    . "💬 *What type of business or initial capital are you planning so I can give you a closer estimate?*";
+            }
+
+            if (preg_match('/(gaano katagal|how long|ilang araw|days|processing time|mabilis ba|kailan makukuha)/i', $question)) {
+                if ($isTagalog) {
+                    return "Tungkol po sa **tagal ng proseso (processing time)**:\n\n"
+                        . "- **DTI Business Name (Online sa `bnrs.dti.gov.ph`):** **15–30 minuto lamang** kapag nakabayad na via GCash/Maya, mada-download agad ang DTI Certificate.\n"
+                        . "- **Barangay Business Clearance:** **1 araw** (same-day release sa inyong Barangay Hall).\n"
+                        . "- **Caloocan BPLO at City Treasurer's Office (BOSS One-Stop Shop):** **1 hanggang 3 working days** basta kumpleto na ang mga dokumento at nabayaran na ang Tax Order of Payment.\n\n"
+                        . "💬 *May tanong pa po ba kayo tungkol sa mga requirements o kung saan magpapasa?*";
+                }
+                return "Here is the **estimated processing time** for your business registration:\n\n"
+                    . "- **DTI Business Name (`bnrs.dti.gov.ph`):** **15–30 minutes** online (instant certificate download after GCash/Maya payment).\n"
+                    . "- **Barangay Business Clearance:** **Same day (1 day)** at your Barangay Hall.\n"
+                    . "- **Caloocan BPLO & Treasury Assessment (One-Stop Shop):** **1 to 3 working days** once complete documents are submitted and paid.\n\n"
+                    . "💬 *Would you like to know where the BPLO and Treasury offices are located or ask about another step?*";
+            }
+
+            if (preg_match('/(saan|san|where|location|address|opisina|office|city hall|pupunta)/i', $question)) {
+                if ($isTagalog) {
+                    return "Narito po kung **saan kayo pupunta o mag-a-apply sa Caloocan City**:\n\n"
+                        . "- **Online (Step 1 - DTI):** Sa `https://bnrs.dti.gov.ph` (hindi na kailangang pumila para sa trade name).\n"
+                        . "- **South Caloocan City Hall (Main):** **8th Street cor. 8th Avenue, Grace Park East, Caloocan City** — narito ang **BPLO (Business Permits & Licensing Office)** at **City Treasurer's Office**.\n"
+                        . "- **North Caloocan City Hall:** **Zapote Street, Camarin, Caloocan City** (may satellite BPLO at Treasury Collection Windows din para sa mga taga-North Caloocan).\n"
+                        . "- **Oras ng Opisina:** Lunes hanggang Biyernes, **8:00 AM – 5:00 PM**.\n\n"
+                        . "💬 *Mas malapit po ba kayo sa North Caloocan o South Caloocan?*";
+                }
+                return "Here is **where to process your Business Permit & Treasury payments in Caloocan City**:\n\n"
+                    . "- **Step 1 Online (DTI):** `https://bnrs.dti.gov.ph`\n"
+                    . "- **South Caloocan City Hall (Main):** **8th Street cor. 8th Avenue, Grace Park East, Caloocan City** (BPLO & City Treasurer's Office).\n"
+                    . "- **North Caloocan City Hall:** **Zapote Street, Camarin, Caloocan City** (Satellite BPLO & Treasury Collection Windows).\n"
+                    . "- **Office Hours:** Monday to Friday, **8:00 AM – 5:00 PM**.\n\n"
+                    . "💬 *Do you have any other questions about the requirements or fees?*";
+            }
+
+            if (preg_match('/(sari-sari|karinderya|kainan|food|online shop|retail|tindahan|puhunan|capital)/i', $question)) {
+                if ($isTagalog) {
+                    return "Magandang ideya po yan! Para sa **Sari-Sari Store / Tindahan / Food Business / Small Enterprise** sa Caloocan:\n\n"
+                        . "- Kung ang puhunan ay maliit, piliin lamang ang **Barangay Scope (₱230)** o **City Scope (₱530)** sa DTI.\n"
+                        . "- Kung **pagkain o tindahan** ang negosyo, kailangan din po ng **Health Certificate / Sanitary Permit** mula sa City Health Department bukod sa Barangay Clearance at Cedula.\n"
+                        . "- Kung ang kabuuang asset ay hindi lalagpas sa ₱3 Milyon, maaari rin kayong mag-apply bilang **BMBE (Barangay Micro Business Enterprise)** para sa dagdag na benepisyo.\n\n"
+                        . "💬 *May napili na po ba kayong pangalan ng negosyo o may tanong pa kayo sa Sanitary/Barangay requirements?*";
+                }
+                return "That's a great business choice! For a **Retail Store, Food Business, or Small Enterprise** in Caloocan City:\n\n"
+                    . "- For DTI registration, you only need **Barangay Scope (₱230)** or **City Scope (₱530)**.\n"
+                    . "- If you are handling food or beverages, you will also need a **Sanitary Permit & Health Card** from the Caloocan City Health Department alongside your Barangay Clearance and Cedula.\n\n"
+                    . "💬 *Do you have any other questions about getting your permits or tax assessment?*";
+            }
+        }
+
+        // 6. Intent-aware responses for New Business Registration vs Renewal vs Retirement
         if (preg_match('/(bago|bagong|new|register|rehistro|magparehistro|business name|pangalan ng negosyo|dti|sec|start|open|magtayo|apply)/i', $question) && preg_match('/(business|negosyo|permit|name|dti|mayor)/i', $question)) {
             if ($isTagalog) {
                 return "### Paano Mag-register ng Bagong Business Name at Mayor's Permit sa Caloocan City\n\n"
-                    . "Kung nais po ninyong magparehistro ng **bagong Business Name at Mayor's Permit**, narito po ang tamang hakbang:\n\n"
+                    . "Kung nais po ninyong magparehistro ng **bagong Business Name at Mayor's Permit**, narito po ang **4 na opisyal na hakbang**:\n\n"
                     . "- **Hakbang 1: Pagpaparehistro ng Business Name (Trade Name)**\n"
-                    . "  - **Sole Proprietorship (Single Owner):** Mag-register muna ng Business Name sa **DTI (Department of Trade and Industry)** online sa `bnrs.dti.gov.ph`.\n"
-                    . "  - **Corporation / Partnership:** Mag-register sa **SEC (Securities and Exchange Commission)**.\n"
+                    . "  - **Sole Proprietorship (Single Owner):** Mag-register muna ng Business Name sa **DTI** online sa `bnrs.dti.gov.ph`.\n"
+                    . "  - **Corporation / Partnership:** Mag-register sa **SEC**.\n"
                     . "  - **Cooperative:** Mag-register sa **CDA**.\n"
                     . "- **Hakbang 2: Barangay Clearance at Locational Clearance**\n"
                     . "  - Kumuha ng **Barangay Business Clearance** sa barangay kung saan itatayo ang negosyo at **Locational / Zoning Clearance** sa City Hall.\n"
                     . "- **Hakbang 3: Pag-apply ng Bagong Mayor's Permit sa BPLO at Assessment sa Treasury**\n"
-                    . "  - Ipasa ang DTI/SEC Certificate, Contract of Lease o Land Title, Barangay Clearance, at **Cedula (Community Tax Certificate)** sa **Caloocan BPLO**.\n"
-                    . "  - Kwentahin ng **City Treasurer's Office** ang inyong **Initial Business Tax** (base sa Capital Investment) at **Regulatory Fees** (Mayor's Permit, Sanitary, Garbage, at Fire Safety Inspection Fee).\n"
+                    . "  - Ipasa ang DTI/SEC Certificate, Contract of Lease o Land Title, Barangay Clearance, at **Cedula** sa **Caloocan BPLO**.\n"
+                    . "  - Kwentahin ng **City Treasurer's Office** ang inyong **Initial Business Tax** (base sa Capital Investment) at **Regulatory Fees**.\n"
                     . "- **Hakbang 4: Pagbabayad at Pagkuha ng Official Receipt (OR)**\n"
-                    . "  - Magbayad sa **Treasury Revenue Collection Counter** o **Online (GCash / Maya)** upang ma-issue ang inyong **Official Receipt (OR)** at **Mayor's Permit**.";
+                    . "  - Magbayad sa **Treasury Collection Counter** o **Online (GCash / Maya)** upang makuha ang inyong **Official Receipt (OR)** at **Mayor's Permit**.\n\n"
+                    . "💬 *Pwede ninyo akong tanungin: \"Magkano ang magagastos sa DTI at Mayor's Permit?\", \"Gaano katagal ang proseso?\", o \"Saan ang opisina sa Caloocan?\"*";
             }
             return "### How to Register a New Business Name & Mayor's Permit in Caloocan City\n\n"
                 . "To register a **new business name and secure your Mayor's Permit**, follow these 4 official steps:\n\n"
@@ -704,9 +928,10 @@ class GeminiInquiryService
                 . "  - Obtain a **Barangay Business Clearance** from the barangay where your business is located and a **Locational / Zoning Clearance** at Caloocan City Hall.\n"
                 . "- **Step 3: BPLO Application & Treasury Tax Assessment**\n"
                 . "  - Submit your DTI/SEC registration, lease contract or land title, Barangay Clearance, and **Community Tax Certificate (Cedula)** to the **Business Permits and Licensing Office (BPLO)**.\n"
-                . "  - The **City Treasurer's Office** will issue a Tax Order of Payment based on your **Paid-Up Capital / Initial Investment** plus regulatory fees (Sanitary, Zoning, Fire Safety).\n"
+                . "  - The **City Treasurer's Office** will issue a Tax Order of Payment based on your **Paid-Up Capital / Initial Investment** plus regulatory fees.\n"
                 . "- **Step 4: Payment & Official Receipt (OR) Issuance**\n"
-                . "  - Pay at the **Treasury Collection Counter** or **Online via GCash/Maya** to receive your Official Receipt and Mayor's Permit.";
+                . "  - Pay at the **Treasury Collection Counter** or **Online via GCash/Maya** to receive your Official Receipt and Mayor's Permit.\n\n"
+                . "💬 *You can ask me follow-up questions like: \"How much are the registration fees?\", \"How long does it take?\", or \"Where is the BPLO located?\"*";
         }
 
         if (preg_match('/(close|retire|retirement|sara|isara|stop|tigil|kansela)/i', $question) && preg_match('/(business|negosyo|permit)/i', $question)) {
@@ -715,16 +940,18 @@ class GeminiInquiryService
                     . "Upang pormal na ipasara ang negosyo at **matigil ang tuloy-tuloy na patong ng quarterly tax at surcharge**:\n"
                     . "- **1.** Magpasa ng **Letter of Intent to Close** at **Barangay Certificate of Business Closure**.\n"
                     . "- **2.** Dalhin ang orihinal na **Mayor's Permit**, huling **Official Receipt (OR)**, at **Sworn Declaration of Gross Sales** hanggang sa araw ng pagsasara.\n"
-                    . "- **3.** Kwentahin ng **City Treasurer's Office** ang anumang natitirang buwis bago mag-issue ng **Certificate of Business Retirement**.";
+                    . "- **3.** Kwentahin ng **City Treasurer's Office** ang anumang natitirang buwis bago mag-issue ng **Certificate of Business Retirement**.\n\n"
+                    . "💬 *May natitira pa po bang unpaid quarter ang negosyong ipapasara ninyo para ma-compute natin?*";
             }
             return "### Business Retirement / Closure Procedure — Caloocan City\n\n"
                 . "To formally close or retire a business in Caloocan City so quarterly taxes and surcharges stop accruing:\n"
                 . "- **1.** Submit an **Application for Business Retirement** and **Barangay Certificate of Closure**.\n"
                 . "- **2.** Surrender the original **Mayor's Permit**, latest **Official Receipt (OR)**, and **Financial Statement / Gross Sales Declaration** up to the date of closure.\n"
-                . "- **3.** Settle any remaining tax due at the **City Treasurer's Office** to receive your **Certificate of Business Retirement**.";
+                . "- **3.** Settle any remaining tax due at the **City Treasurer's Office** to receive your **Certificate of Business Retirement**.\n\n"
+                . "💬 *Do you have an existing assessment number you'd like me to check before retiring the business?*";
         }
 
-        // 6. Category-based live data + ordinance response
+        // 7. Category-based live data + ordinance response
         switch ($category) {
             case 'Real Property Tax (RPT)':
                 $rptList = array_filter($ragContext['assessments'] ?? [], fn($a) => stripos((string) $a['tax_type'], 'Property') !== false);
@@ -737,7 +964,8 @@ class GeminiInquiryService
                         . "2. **Komputasyon ng Penalty (RA 7160 Sec. 255):**\n"
                         . "   - **25% Surcharge** sa hindi nabayarang Basic RPT + SEF.\n"
                         . "   - **2% Interest kada buwan** ng pagkaantala (hanggang 36 buwan).\n"
-                        . "3. **Live Assessment Lookup:** I-type lamang ang inyong Assessment No. (hal. {$sampleRefs}) upang makita ang eksaktong breakdown.";
+                        . "3. **Live Assessment Lookup:** I-type lamang ang inyong Assessment No. (hal. {$sampleRefs}) upang makita ang eksaktong breakdown.\n\n"
+                        . "💬 *Alin pong RPT Assessment o halaga ng amilyar ang gusto ninyong i-check natin?*";
                 }
                 return "### Real Property Tax (RPT) Guidelines & Computation — Caloocan City\n\n"
                     . "1. **Payment Deadlines:**\n"
@@ -746,7 +974,8 @@ class GeminiInquiryService
                     . "2. **Delinquency Penalties (RA 7160 Sec. 255):**\n"
                     . "   - **25% Surcharge** on the unpaid Basic Tax + Special Education Fund (SEF).\n"
                     . "   - **2% Monthly Interest** on the unpaid amount (plus surcharge) until fully paid (maximum of 36 months).\n"
-                    . "3. **Check Your Live Assessment:** Enter your Assessment No. in the chat (e.g., {$sampleRefs}) for an instant itemized breakdown.";
+                    . "3. **Check Your Live Assessment:** Enter your Assessment No. in the chat (e.g., {$sampleRefs}) for an instant itemized breakdown.\n\n"
+                    . "💬 *Which RPT Assessment number or amount would you like me to compute for you?*";
 
             case 'Business Tax & Permits':
                 if ($isTagalog) {
@@ -757,7 +986,8 @@ class GeminiInquiryService
                         . "  2. Sworn Declaration of Gross Sales / Receipts o Financial Statement\n"
                         . "  3. Barangay Business Clearance, Sanitary Permit, at Fire Safety Inspection Certificate (FSIC)\n"
                         . "  4. Community Tax Certificate (Cedula)\n"
-                        . "- **Late Renewal Penalty:** **25% Surcharge** + **2% interes kada buwan**. Maaari ninyong i-type ang `BIZ-2026-001` o `TA-2026-102` upang tingnan ang live assessment.";
+                        . "- **Late Renewal Penalty:** **25% Surcharge** + **2% interes kada buwan**. Maaari ninyong i-type ang `BIZ-2026-001` o `TA-2026-102` upang tingnan ang live assessment.\n\n"
+                        . "💬 *Magre-renew po ba kayo ng permit, magpapa-register ng bagong negosyo, o magpapa-compute ng business tax?*";
                 }
                 return "### Business Tax & Mayor's Permit Renewal — Caloocan City\n\n"
                     . "- **Renewal Deadline:** **January 20** annually (or quarterly on Jan 20, Apr 20, Jul 20, Oct 20).\n"
@@ -766,7 +996,8 @@ class GeminiInquiryService
                     . "  2. Audited Financial Statements / Sworn Declaration of Gross Receipts\n"
                     . "  3. Barangay Clearance, Sanitary Permit, and Fire Safety Inspection Certificate (FSIC)\n"
                     . "  4. Community Tax Certificate (Cedula)\n"
-                    . "- **Late Penalties:** **25% statutory surcharge** + **2% monthly interest**. Type an assessment number such as `BIZ-2026-001` or `TA-2026-102` to inspect a live account.";
+                    . "- **Late Penalties:** **25% statutory surcharge** + **2% monthly interest**. Type an assessment number such as `BIZ-2026-001` or `TA-2026-102` to inspect a live account.\n\n"
+                    . "💬 *Are you renewing an existing permit, registering a new business, or checking a specific assessment?*";
 
             case 'Market Stall Rental':
                 $stalls = $ragContext['stalls'] ?? [];
@@ -777,76 +1008,110 @@ class GeminiInquiryService
                         . "- **Buwanang Cutoff Date:** Tuwing **ika-20 ng buwan**.\n"
                         . "- **Late Payment Surcharge:** **25% surcharge** kapag lumagpas sa ika-20.\n"
                         . "- **Kabuuang Stalls sa Ledger:** **" . count($stalls) . " stalls** (" . (count($stalls) - count($vacant)) . " occupied, " . count($vacant) . " bakante).\n"
-                        . "- **Mga Bakanteng Stall na Maaaring Apply-an:** " . ($vacantList ?: 'Wala sa ngayon') . "\n"
-                        . "- *Tip:* I-type ang stall number gaya ng `A-01`, `A-03`, o `C-02` upang makita ang vendor at bayad.";
+                        . "- **Mga Bakanteng Stall na Maaaring Apply-an:** " . ($vacantList ?: 'Wala sa ngayon') . "\n\n"
+                        . "💬 *I-type lamang ang stall number gaya ng `A-01`, `A-03`, o `C-02` o tanungin kung paano mag-apply sa bakanteng pwesto!*";
                 }
                 return "### Caloocan Public Market Stall Rental & Occupancy\n\n"
                     . "- **Monthly Cutoff Date:** On or before the **20th of every month**.\n"
                     . "- **Late Payment Surcharge:** **25% surcharge** is automatically added after the 20th.\n"
                     . "- **Total Stalls in Ledger:** **" . count($stalls) . " stalls** (" . (count($stalls) - count($vacant)) . " occupied, " . count($vacant) . " vacant).\n"
-                    . "- **Currently Vacant Stalls Available for Lease:** " . ($vacantList ?: 'None at the moment') . "\n"
-                    . "- *Tip:* Type a stall number like `A-01`, `A-03`, or `C-02` to check its vendor and payment status.";
+                    . "- **Currently Vacant Stalls Available for Lease:** " . ($vacantList ?: 'None at the moment') . "\n\n"
+                    . "💬 *Type any stall number like `A-01`, `A-03`, or `C-02`, or ask me how to apply for a vacant stall!*";
 
             case 'Cedula & Miscellaneous Fees':
                 if ($isTagalog) {
                     return "### Community Tax Certificate (Cedula) — Caloocan City Treasury\n\n"
                         . "- **Basic Community Tax:** **₱5.00**.\n"
                         . "- **Additional Community Tax:** **₱1.00 para sa bawat ₱1,000.00** ng kabuuang kita (gross earnings) mula sa trabaho, propesyon, o negosyo noong nakaraang taon.\n"
-                        . "- **Saan Kukuha:** Sa **Treasury Revenue Collection Window** sa Caloocan City Hall (magdala lamang ng 1 Valid Government ID).";
+                        . "- **Saan Kukuha:** Sa **Treasury Revenue Collection Window** sa Caloocan City Hall o Barangay Hall (magdala lamang ng 1 Valid Government ID).\n\n"
+                        . "💬 *Gusto po ba ninyong ipa-compute kung magkano ang Cedula base sa inyong buwanan o taunang kita?*";
                 }
                 return "### Community Tax Certificate (Cedula) — Caloocan City Treasury\n\n"
                     . "- **Basic Community Tax:** **₱5.00**.\n"
                     . "- **Additional Tax:** **₱1.00 for every ₱1,000.00** of gross earnings/income from profession or business during the preceding year.\n"
-                    . "- **Where to Secure:** At the **Treasury Revenue Collection Window** in Caloocan City Hall (present 1 valid Government ID).";
+                    . "- **Where to Secure:** At the **Treasury Revenue Collection Window** in Caloocan City Hall (present 1 valid Government ID).\n\n"
+                    . "💬 *Would you like me to compute your exact Cedula amount based on your annual gross income?*";
 
             case 'Online Payment & Receipts':
                 if ($isTagalog) {
                     return "### Online Tax & Fee Payment (PayMongo — GCash, Maya, Card)\n\n"
                         . "- **Mga Tinatanggap na Paraan ng Bayad:** **GCash, Maya, Credit/Debit Card, at Online Banking** sa pamamagitan ng Civentral Citizen Portal.\n"
                         . "- **Convenience Fee:** 1% gateway processing fee.\n"
-                        . "- **Electronic Official Receipt (OR):** Kapag nakumpleto ang bayad, awtomatikong mag-i-issue ang sistema ng **Official Receipt (`OR-YYYY-...`)** at ire-record ito sa Treasury Fund Ledger.";
+                        . "- **Electronic Official Receipt (OR):** Kapag nakumpleto ang bayad, awtomatikong mag-i-issue ang sistema ng **Official Receipt (`OR-YYYY-...`)** at ire-record ito sa Treasury Fund Ledger.\n\n"
+                        . "💬 *May Assessment No. o Official Receipt No. po ba kayo na gustong i-verify ngayon?*";
                 }
                 return "### Online Tax & Fee Payment (PayMongo — GCash, Maya, Card)\n\n"
                     . "1. **Supported Channels:** GCash, Maya, Credit/Debit Card, and Online Banking via the **Civentral Citizen Portal**.\n"
                     . "2. **Convenience Fee:** 1% gateway processing fee.\n"
-                    . "3. **Automatic Official Receipt (OR):** Once paid, PayMongo notifies the Treasury webhook (`api/webhooks/paymongo.php`), automatically issues an Official Receipt (`OR-YYYY-...`), and records `+ Money In` in the corresponding Treasury Fund Ledger.";
+                    . "3. **Automatic Official Receipt (OR):** Once paid, PayMongo notifies the Treasury webhook (`api/webhooks/paymongo.php`), automatically issues an Official Receipt (`OR-YYYY-...`), and records `+ Money In` in the corresponding Treasury Fund Ledger.\n\n"
+                    . "💬 *Do you have an Assessment No. or Official Receipt No. you'd like me to verify right now?*";
 
             default:
                 if ($isTagalog) {
-                    return "Magandang araw po! Ako ang **Caloocan City Treasury Gemini AI Assistant**.\n\n"
-                        . "Maaari po ninyo akong tanungin tungkol sa:\n"
-                        . "- **Pagpaparehistro ng Bagong Negosyo o Renewal:** Hal. *\"Paano mag-register ng bagong business name at Mayor's Permit?\"*\n"
-                        . "- **Real Property Tax (Amilyar):** Hal. *\"Magkano ang babayaran sa RPT-2026-001?\"*\n"
-                        . "- **Public Market Stall Rental:** Hal. *\"Ano ang status ng Stall A-03 o anong stall ang bakante?\"*\n"
-                        . "- **Komputasyon ng Surcharge at Penalty:** Hal. *\"Compute surcharge for 15000\"*";
+                    return "Naiintindihan ko po ang inyong tanong: *\"" . htmlspecialchars($question, ENT_QUOTES, 'UTF-8') . "\"*.\n\n"
+                        . "Bilang inyong **Caloocan City Treasury Conversational AI Assistant**, maaari tayong mag-usap tungkol sa:\n"
+                        . "- 🏢 **Pagpaparehistro ng Bagong Negosyo o Renewal:** Hal. *\"Paano mag-register ng bagong business name?\"*, *\"Magkano ang bayad?\"*, *\"Gaano katagal?\"*\n"
+                        . "- 🏠 **Real Property Tax (Amilyar) at Business Tax Lookup:** Hal. *\"Magkano ang RPT-2026-001?\"*, *\"Bakit may surcharge yan?\"*\n"
+                        . "- 🏪 **Public Market Stall Rental:** Hal. *\"Ano ang status ng Stall A-03?\"*, *\"Paano mag-apply sa bakanteng stall?\"*\n"
+                        . "- 🧮 **Komputasyon ng Surcharge at Penalty:** Hal. *\"Compute surcharge for 15000\"*\n\n"
+                        . "💬 *Sabihin lang po ninyo kung alin dito ang gusto ninyong pag-usapan at sasagutin ko kayo!*";
                 }
-                return "Hello! I am the **Caloocan City Hall Treasury Gemini AI Assistant**.\n\n"
-                    . "I am connected to the live Treasury Database. You can ask me in **English or Tagalog** about:\n"
-                    . "- **New Business Registration & Renewal:** Try *\"How do I register a new business name and Mayor's Permit?\"*\n"
-                    . "- **Live Tax Assessment Lookup:** Try asking *\"Check assessment RPT-2026-001\"* or *\"Status of BIZ-2026-001\"*\n"
-                    . "- **Market Stall Occupancy & Rates:** Try *\"Check market stall A-03\"* or *\"Which market stalls are vacant?\"*\n"
-                    . "- **Tax & Surcharge Computations:** Try *\"Compute surcharge and interest for 15000\"*";
+                return "I understand you're asking about: *\"" . htmlspecialchars($question, ENT_QUOTES, 'UTF-8') . "\"*.\n\n"
+                    . "As your **Caloocan City Hall Treasury Conversational AI Assistant**, we can chat back and forth in **English or Tagalog** about:\n"
+                    . "- 🏢 **New Business Registration & Renewal:** Try *\"How do I register a new business name?\"*, followed by *\"How much does it cost?\"* or *\"How long does it take?\"*\n"
+                    . "- 🏠 **Live Tax Assessment Lookup:** Try *\"Check assessment RPT-2026-001\"*, then ask *\"Why does it have a surcharge?\"* or *\"How do I pay it?\"*\n"
+                    . "- 🏪 **Market Stall Occupancy & Rates:** Try *\"Check market stall A-03\"* or *\"Which market stalls are vacant?\"*\n"
+                    . "- 🧮 **Tax & Surcharge Computations:** Try *\"Compute surcharge and interest for 15000\"*\n\n"
+                    . "💬 *Which of these can I help you with right now?*";
         }
     }
 
-    public function detectCategory(string $question): string
+    public function detectCategory(string $question, array $history = []): string
     {
         $q = strtolower($question);
         if (preg_match('/(rpt|real property|amilyar|land tax|property tax|td-|arp)/i', $q)) {
             return 'Real Property Tax (RPT)';
         }
-        if (preg_match('/(business|mayor|permit|gross|renewal|biz-)/i', $q)) {
+        if (preg_match('/(business|mayor|permit|gross|renewal|biz-|negosyo|dti|sec|sari-sari|tindahan|ta-2026|as-2026)/i', $q)) {
             return 'Business Tax & Permits';
         }
-        if (preg_match('/(market|stall|vendor|pwesto|palengke|section|[a-d]-0\d)/i', $q)) {
+        if (preg_match('/(market|stall|vendor|pwesto|palengke|section|[a-d]-0\d|ms-[a-d])/i', $q)) {
             return 'Market Stall Rental';
         }
         if (preg_match('/(gcash|maya|online|paymongo|receipt|or-|checkout|card)/i', $q)) {
             return 'Online Payment & Receipts';
         }
-        if (preg_match('/(cedula|community tax|ctc|clearance)/i', $q)) {
+        if (preg_match('/(cedula|sedula|community tax|ctc|clearance)/i', $q)) {
             return 'Cedula & Miscellaneous Fees';
         }
+
+        // Multi-turn conversational inheritance: if current message is a follow-up question
+        // (e.g. "magkano yan?", "gaano katagal?", "saan po ang opisina?", "bakit may penalty?"),
+        // inherit the active category from recent conversation history!
+        if (!empty($history)) {
+            foreach (array_reverse(array_slice($history, -4)) as $turn) {
+                $prevText = strtolower((string) ($turn['content'] ?? $turn['text'] ?? ''));
+                if ($prevText === '') {
+                    continue;
+                }
+                if (preg_match('/(rpt|real property|amilyar|land tax|property tax)/i', $prevText)) {
+                    return 'Real Property Tax (RPT)';
+                }
+                if (preg_match('/(business|mayor|permit|negosyo|dti|bplo|biz-|ta-2026)/i', $prevText)) {
+                    return 'Business Tax & Permits';
+                }
+                if (preg_match('/(market|stall|vendor|pwesto|palengke)/i', $prevText)) {
+                    return 'Market Stall Rental';
+                }
+                if (preg_match('/(cedula|sedula|community tax)/i', $prevText)) {
+                    return 'Cedula & Miscellaneous Fees';
+                }
+                if (preg_match('/(gcash|maya|paymongo|online)/i', $prevText)) {
+                    return 'Online Payment & Receipts';
+                }
+            }
+        }
+
         return 'General Tax Inquiry';
     }
 
