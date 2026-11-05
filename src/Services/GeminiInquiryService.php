@@ -216,7 +216,7 @@ class GeminiInquiryService
         $category = $this->detectCategory($question);
         $ragContext = $this->buildLiveDatabaseContext($question, $accountRef, $citizenId, $senderName);
 
-        // Call live Gemini REST API if key is configured, else call live Cloud LLM + RAG or local RAG engine
+        // Call live Gemini REST API if key is configured, else use intent-aware Live-DB RAG engine
         $modelUsed = $this->model;
         $answer = null;
 
@@ -229,16 +229,10 @@ class GeminiInquiryService
         }
 
         if ($answer === null) {
-            $cloudResult = $this->callCloudLlmWithRag($question, $ragContext, $language, $history);
-            if ($cloudResult['success'] && !empty($cloudResult['text'])) {
-                $answer = $cloudResult['text'];
-                $modelUsed = 'Gemini AI Assistant (Live Generative RAG)';
-            }
-        }
-
-        if ($answer === null) {
             $answer = $this->generateLiveRagResponse($question, $ragContext, $language, $category);
-            $modelUsed = 'Caloocan Treasury AI Engine (Live DB RAG)';
+            $modelUsed = $this->apiKey !== ''
+                ? 'Caloocan Treasury AI Engine (Gemini Fallback + Live DB RAG)'
+                : 'Caloocan Treasury AI Engine (Live DB RAG)';
         }
 
         $elapsedMs = (int) round((microtime(true) - $startTime) * 1000);
