@@ -272,14 +272,19 @@ class TreasuryService {
         $taxpayerName = $assessment['taxpayer_name'] ?? 'Valued Taxpayer';
         $assessmentNo = $assessment['assessment_no'] ?? ('AS-' . $assessmentId);
         $taxType = $assessment['tax_type'] ?? 'Local Government Tax';
-        $basicDue = (float) ($assessment['tax_due'] ?? 0);
+        $basicDue = (float) ($assessment['basic_amount'] ?? $assessment['tax_due'] ?? 0);
         $dueDate = $assessment['due_date'] ?? date('Y-m-d');
         $dueTs = strtotime($dueDate);
-        $isOverdue = strtolower((string) ($assessment['status'] ?? '')) === 'overdue' || $dueTs < strtotime(date('Y-m-d'));
+        $statusLower = strtolower((string) ($assessment['status'] ?? ''));
+        $isOverdue = in_array($statusLower, ['overdue', 'delinquent'], true) || $dueTs < strtotime(date('Y-m-d'));
         $monthsLate = $isOverdue ? max(1, min(36, (int) ceil((time() - $dueTs) / (30 * 86400)))) : 0;
-        $surcharge = $isOverdue ? round($basicDue * 0.25, 2) : 0.0;
-        $interest  = $isOverdue ? round(($basicDue + $surcharge) * (0.02 * $monthsLate), 2) : 0.0;
-        $totalDue  = $basicDue + $surcharge + $interest;
+        $surcharge = isset($assessment['surcharge_amount']) && (float) $assessment['surcharge_amount'] > 0
+            ? (float) $assessment['surcharge_amount']
+            : ($isOverdue ? round($basicDue * 0.25, 2) : 0.0);
+        $interest = isset($assessment['penalty_amount']) && (float) $assessment['penalty_amount'] > 0
+            ? (float) $assessment['penalty_amount']
+            : ($isOverdue ? round(($basicDue + $surcharge) * (0.02 * $monthsLate), 2) : 0.0);
+        $totalDue = $basicDue + $surcharge + $interest;
 
         $subject = ($isOverdue ? '[OVERDUE TAX NOTICE] ' : '[BILLING REMINDER] ') . $assessmentNo . ' — Caloocan City Treasurer\'s Office';
         $body = '
@@ -875,6 +880,32 @@ class TreasuryService {
                 'receipt_no' => $orNumber,
                 'settled_at' => date('Y-m-d H:i:s'),
             ]);
+
+            // Phase 4: Dispatch automated Electronic Official Receipt (e-OR) email confirmation to citizen
+            $citizenEmail = trim((string) ($payment['citizen_email'] ?? $payment['email'] ?? ''));
+            if ($citizenEmail !== '') {
+                try {
+                    require_once __DIR__ . '/../../config/mailer.php';
+                    if (function_exists('sendSystemEmail')) {
+                        $subject = '[OFFICIAL RECEIPT ' . $orNumber . '] Payment Confirmation — Caloocan City Treasury';
+                        $body = '<div style="font-family:Arial,sans-serif;max-width:580px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">'
+                            . '<div style="background:#176B87;padding:20px 26px;color:#fff;">'
+                            . '<h2 style="margin:0;font-size:17px;">Caloocan City Treasurer\'s Office — Electronic Official Receipt</h2>'
+                            . '</div>'
+                            . '<div style="padding:24px 26px;font-size:13px;color:#1e293b;line-height:1.6;">'
+                            . '<p>Dear <strong>' . htmlspecialchars($payerName) . '</strong>,</p>'
+                            . '<p>Your online payment has been verified and posted to the Treasury Fund Ledger.</p>'
+                            . '<p><strong>Official Receipt No.:</strong> ' . htmlspecialchars($orNumber) . '<br>'
+                            . '<strong>Payment Reference:</strong> ' . htmlspecialchars($paymentReference) . '<br>'
+                            . '<strong>Particulars:</strong> ' . htmlspecialchars($revSource) . '<br>'
+                            . '<strong>Total Amount Paid:</strong> &#8369;' . number_format((float) $payment['amount'], 2) . '</p>'
+                            . '</div></div>';
+                        sendSystemEmail($citizenEmail, $payerName, $subject, $body);
+                    }
+                } catch (\Throwable $e) {
+                    error_log('[Online Payment Receipt Email] ' . $e->getMessage());
+                }
+            }
 
             return $this->treasuryRepo->getOnlinePaymentById($payment['id']);
         } else {
